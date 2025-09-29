@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kms.mapper.AnalysisResultMapper">
+    
+    <resultMap type="AnalysisResult" id="AnalysisResultResult">
+        <result property="id"    column="id"    />
+        <result property="dataId"    column="data_id"    />
+        <result property="warningType"    column="warning_type"    />
+        <result property="warningLevel"    column="warning_level"    />
+        <result property="analysisTime"    column="analysis_time"    />
+        <result property="isHandled"    column="is_handled"    />
+    </resultMap>
+
+    <sql id="selectAnalysisResultVo">
+        select id, data_id, warning_type, warning_level, analysis_time, is_handled from analysis_result
+    </sql>
+
+    <select id="selectAnalysisResultList" parameterType="AnalysisResult" resultMap="AnalysisResultResult">
+        <include refid="selectAnalysisResultVo"/>
+        <where>  
+            <if test="dataId != null "> and data_id = #{dataId}</if>
+            <if test="warningType != null  and warningType != ''"> and warning_type = #{warningType}</if>
+            <if test="warningLevel != null  and warningLevel != ''"> and warning_level = #{warningLevel}</if>
+            <if test="analysisTime != null "> and analysis_time = #{analysisTime}</if>
+            <if test="isHandled != null "> and is_handled = #{isHandled}</if>
+        </where>
+    </select>
+    
+    <select id="selectAnalysisResultById" parameterType="Long" resultMap="AnalysisResultResult">
+        <include refid="selectAnalysisResultVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertAnalysisResult" parameterType="AnalysisResult" useGeneratedKeys="true" keyProperty="id">
+        insert into analysis_result
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="dataId != null">data_id,</if>
+            <if test="warningType != null and warningType != ''">warning_type,</if>
+            <if test="warningLevel != null and warningLevel != ''">warning_level,</if>
+            <if test="analysisTime != null">analysis_time,</if>
+            <if test="isHandled != null">is_handled,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="dataId != null">#{dataId},</if>
+            <if test="warningType != null and warningType != ''">#{warningType},</if>
+            <if test="warningLevel != null and warningLevel != ''">#{warningLevel},</if>
+            <if test="analysisTime != null">#{analysisTime},</if>
+            <if test="isHandled != null">#{isHandled},</if>
+         </trim>
+    </insert>
+
+    <update id="updateAnalysisResult" parameterType="AnalysisResult">
+        update analysis_result
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="dataId != null">data_id = #{dataId},</if>
+            <if test="warningType != null and warningType != ''">warning_type = #{warningType},</if>
+            <if test="warningLevel != null and warningLevel != ''">warning_level = #{warningLevel},</if>
+            <if test="analysisTime != null">analysis_time = #{analysisTime},</if>
+            <if test="isHandled != null">is_handled = #{isHandled},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteAnalysisResultById" parameterType="Long">
+        delete from analysis_result where id = #{id}
+    </delete>
+
+    <delete id="deleteAnalysisResultByIds" parameterType="String">
+        delete from analysis_result where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    <select id="selectWarningCount" parameterType="Integer" resultType="int">
+        SELECT COUNT(1) FROM analysis_result
+        <where>
+            <!-- 使用 <if> 标签进行动态SQL判断 -->
+            <if test="isHandled != null">
+                AND is_handled = #{isHandled}
+            </if>
+        </where>
+    </select>
+</mapper>

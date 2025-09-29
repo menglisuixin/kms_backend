@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kms.mapper.RealTimeDataMapper">
+    
+    <resultMap type="RealTimeData" id="RealTimeDataResult">
+        <result property="id"    column="id"    />
+        <result property="cpuUsage"    column="cpu_usage"    />
+        <result property="memUsage"    column="mem_usage"    />
+        <result property="diskUsage"    column="disk_usage"    />
+        <result property="collectTime"    column="collect_time"    />
+        <result property="isValid"    column="is_valid"    />
+    </resultMap>
+
+    <sql id="selectRealTimeDataVo">
+        select id, cpu_usage, mem_usage, disk_usage, collect_time, is_valid from real_time_data
+    </sql>
+
+    <select id="selectRealTimeDataList" parameterType="RealTimeData" resultMap="RealTimeDataResult">
+        <include refid="selectRealTimeDataVo"/>
+        <where>  
+            <if test="cpuUsage != null "> and cpu_usage = #{cpuUsage}</if>
+            <if test="memUsage != null "> and mem_usage = #{memUsage}</if>
+            <if test="diskUsage != null "> and disk_usage = #{diskUsage}</if>
+            <if test="collectTime != null "> and collect_time = #{collectTime}</if>
+            <if test="isValid != null "> and is_valid = #{isValid}</if>
+        </where>
+    </select>
+    
+    <select id="selectRealTimeDataById" parameterType="Long" resultMap="RealTimeDataResult">
+        <include refid="selectRealTimeDataVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertRealTimeData" parameterType="RealTimeData" useGeneratedKeys="true" keyProperty="id">
+        insert into real_time_data
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="cpuUsage != null">cpu_usage,</if>
+            <if test="memUsage != null">mem_usage,</if>
+            <if test="diskUsage != null">disk_usage,</if>
+            <if test="collectTime != null">collect_time,</if>
+            <if test="isValid != null">is_valid,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="cpuUsage != null">#{cpuUsage},</if>
+            <if test="memUsage != null">#{memUsage},</if>
+            <if test="diskUsage != null">#{diskUsage},</if>
+            <if test="collectTime != null">#{collectTime},</if>
+            <if test="isValid != null">#{isValid},</if>
+         </trim>
+    </insert>
+
+    <update id="updateRealTimeData" parameterType="RealTimeData">
+        update real_time_data
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="cpuUsage != null">cpu_usage = #{cpuUsage},</if>
+            <if test="memUsage != null">mem_usage = #{memUsage},</if>
+            <if test="diskUsage != null">disk_usage = #{diskUsage},</if>
+            <if test="collectTime != null">collect_time = #{collectTime},</if>
+            <if test="isValid != null">is_valid = #{isValid},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteRealTimeDataById" parameterType="Long">
+        delete from real_time_data where id = #{id}
+    </delete>
+
+    <delete id="deleteRealTimeDataByIds" parameterType="String">
+        delete from real_time_data where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    <select id="selectLatestData" resultMap="RealTimeDataResult">
+        select id, cpu_usage, mem_usage, disk_usage, collect_time, is_valid
+        from real_time_data
+        order by collect_time desc
+            limit 1
+    </select>
+</mapper>
