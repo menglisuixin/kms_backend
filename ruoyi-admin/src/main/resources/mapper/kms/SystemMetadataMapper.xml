@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kms.mapper.SystemMetadataMapper">
+    
+    <resultMap type="SystemMetadata" id="SystemMetadataResult">
+        <result property="id"    column="id"    />
+        <result property="moduleName"    column="module_name"    />
+        <result property="configKey"    column="config_key"    />
+        <result property="configValue"    column="config_value"    />
+        <result property="updateTime"    column="update_time"    />
+        <result property="remark"    column="remark"    />
+    </resultMap>
+
+    <sql id="selectSystemMetadataVo">
+        select id, module_name, config_key, config_value, update_time, remark from system_metadata
+    </sql>
+
+    <select id="selectSystemMetadataList" parameterType="SystemMetadata" resultMap="SystemMetadataResult">
+        <include refid="selectSystemMetadataVo"/>
+        <where>  
+            <if test="moduleName != null  and moduleName != ''"> and module_name like concat('%', #{moduleName}, '%')</if>
+            <if test="configKey != null  and configKey != ''"> and config_key = #{configKey}</if>
+            <if test="configValue != null  and configValue != ''"> and config_value = #{configValue}</if>
+        </where>
+    </select>
+    
+    <select id="selectSystemMetadataById" parameterType="Long" resultMap="SystemMetadataResult">
+        <include refid="selectSystemMetadataVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertSystemMetadata" parameterType="SystemMetadata" useGeneratedKeys="true" keyProperty="id">
+        insert into system_metadata
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="moduleName != null and moduleName != ''">module_name,</if>
+            <if test="configKey != null and configKey != ''">config_key,</if>
+            <if test="configValue != null and configValue != ''">config_value,</if>
+            <if test="updateTime != null">update_time,</if>
+            <if test="remark != null">remark,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="moduleName != null and moduleName != ''">#{moduleName},</if>
+            <if test="configKey != null and configKey != ''">#{configKey},</if>
+            <if test="configValue != null and configValue != ''">#{configValue},</if>
+            <if test="updateTime != null">#{updateTime},</if>
+            <if test="remark != null">#{remark},</if>
+         </trim>
+    </insert>
+
+    <update id="updateSystemMetadata" parameterType="SystemMetadata">
+        update system_metadata
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="moduleName != null and moduleName != ''">module_name = #{moduleName},</if>
+            <if test="configKey != null and configKey != ''">config_key = #{configKey},</if>
+            <if test="configValue != null and configValue != ''">config_value = #{configValue},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+            <if test="remark != null">remark = #{remark},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteSystemMetadataById" parameterType="Long">
+        delete from system_metadata where id = #{id}
+    </delete>
+
+    <delete id="deleteSystemMetadataByIds" parameterType="String">
+        delete from system_metadata where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+    <select id="selectByModuleAndKey" parameterType="map" resultMap="SystemMetadataResult">
+        select
+            id, module_name, config_key, config_value, update_time, remark
+        from
+            system_metadata
+        where
+            module_name = #{moduleName}
+          and config_key = #{configKey}
+            limit 1
+    </select>
+</mapper>
