@@ -7,7 +7,7 @@ import com.ruoyi.kms.mapper.RealTimeDataMapper;
 import com.ruoyi.kms.service.IRealTimeDataService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
+import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.List;
 import java.util.Map;
 
@@ -109,30 +109,50 @@ public class RealTimeDataServiceImpl implements IRealTimeDataService {
      * 校验磁盘数据JSON格式（合法+包含核心字段）
      */
     private void validateDiskData(String diskDataJson) {
-        // 1. 校验JSON格式合法性
-        try {
-            objectMapper.readTree(diskDataJson);
-        } catch (Exception e) {
-            throw new ServiceException("磁盘数据不是合法JSON格式：" + e.getMessage());
+        if (diskDataJson == null || diskDataJson.trim().isEmpty()) {
+            throw new ServiceException("磁盘JSON数据不能为空");
         }
 
-        // 2. 校验JSON包含核心字段（path/type/total/usage）
         try {
-            Map<String, Object> diskMap = objectMapper.readValue(diskDataJson, Map.class);
-            if (!diskMap.containsKey("path") || diskMap.get("path") == null) {
-                throw new ServiceException("磁盘JSON缺少核心字段：path（磁盘路径）");
+            // 1. 将JSON字符串解析成一个Map对象的列表
+            // 使用TypeReference来精确指定泛型类型
+            List<Map<String, Object>> diskList = objectMapper.readValue(
+                    diskDataJson,
+                    new TypeReference<List<Map<String, Object>>>() {}
+            );
+
+            // 2. 检查磁盘列表是否为空
+            if (diskList == null || diskList.isEmpty()) {
+                throw new ServiceException("磁盘JSON数组为空，至少需要一条磁盘数据");
             }
-            if (!diskMap.containsKey("type") || diskMap.get("type") == null) {
-                throw new ServiceException("磁盘JSON缺少核心字段：type（磁盘类型）");
+
+            // 3. 遍历列表，校验每个磁盘对象的核心字段
+            for (int i = 0; i < diskList.size(); i++) {
+                Map<String, Object> diskMap = diskList.get(i);
+                if (diskMap == null) {
+                    throw new ServiceException("磁盘JSON数组中第 " + (i + 1) + " 个元素为null");
+                }
+
+                if (!diskMap.containsKey("path") || diskMap.get("path") == null || diskMap.get("path").toString().trim().isEmpty()) {
+                    throw new ServiceException("磁盘JSON数组中第 " + (i + 1) + " 个元素缺少核心字段：path（磁盘路径）");
+                }
+                if (!diskMap.containsKey("type") || diskMap.get("type") == null || diskMap.get("type").toString().trim().isEmpty()) {
+                    throw new ServiceException("磁盘JSON数组中第 " + (i + 1) + " 个元素缺少核心字段：type（磁盘类型）");
+                }
+                if (!diskMap.containsKey("total") || diskMap.get("total") == null) {
+                    throw new ServiceException("磁盘JSON数组中第 " + (i + 1) + " 个元素缺少核心字段：total（总大小）");
+                }
+                if (!diskMap.containsKey("usage") || diskMap.get("usage") == null) {
+                    throw new ServiceException("磁盘JSON数组中第 " + (i + 1) + " 个元素缺少核心字段：usage（使用率）");
+                }
             }
-            if (!diskMap.containsKey("total") || diskMap.get("total") == null) {
-                throw new ServiceException("磁盘JSON缺少核心字段：total（总大小）");
-            }
-            if (!diskMap.containsKey("usage") || diskMap.get("usage") == null) {
-                throw new ServiceException("磁盘JSON缺少核心字段：usage（使用率）");
-            }
+
+        } catch (ServiceException e) {
+            // 如果是我们自己抛出的异常，直接重新抛出
+            throw e;
         } catch (Exception e) {
-            throw new ServiceException("磁盘JSON核心字段校验失败：" + e.getMessage());
+            // 捕获所有其他解析或处理异常
+            throw new ServiceException("磁盘JSON格式或内容校验失败：" + e.getMessage());
         }
     }
 }

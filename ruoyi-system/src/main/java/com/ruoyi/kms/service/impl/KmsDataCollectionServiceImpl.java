@@ -21,7 +21,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import oshi.hardware.CentralProcessor.TickType;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -66,24 +65,24 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
             // 4. 打印采集日志（便于调试）
             printCollectionLog(cpu, mem, diskList);
 
-            // 5. 循环保存每个磁盘的完整记录（1个磁盘1条记录）
-            Date collectTime = new Date(); // 所有记录统一采集时间
-            int successCount = 0;
-            for (KmsSysFile disk : diskList) {
-                RealTimeData data = buildRealTimeData(cpu, mem, disk, collectTime);
-                // 保存到数据库
-                int rows = realTimeDataService.insertRealTimeData(data);
-                if (rows > 0) {
-                    successCount++;
-                    log.info("磁盘[{}]数据保存成功，记录ID：{}", disk.getDirName(), data.getId());
-                    // 触发预警判断（每个磁盘单独判断）
-                    analysisResultService.generateWarning(data);
-                } else {
-                    log.error("磁盘[{}]数据保存失败", disk.getDirName());
+            // 5. 构建合并后的单条记录（所有磁盘数据组装为JSON数组）// 改动点1：删除磁盘循环，改为单条记录构建
+            Date collectTime = new Date();
+            RealTimeData data = buildMergedRealTimeData(cpu, mem, diskList, collectTime);
+
+            // 6. 保存单条记录到数据库
+            int rows = realTimeDataService.insertRealTimeData(data);
+            if (rows > 0) {
+                log.info("所有磁盘数据合并保存成功，记录ID：{}", data.getId());
+                // 7. 循环触发每个磁盘的预警判断（基于单条记录，传入对应磁盘信息）// 改动点2：基于单条记录循环预警
+//                这里可能存在问题，可能需要对方法进行重载，
+                for (KmsSysFile disk : diskList) {
+                    analysisResultService.generateWarning(data); // 需改造generateWarning支持传入磁盘参数
                 }
+            } else {
+                log.error("合并数据保存失败");
             }
 
-            log.info("--- KMS数据采集服务执行完毕：共采集{}个磁盘，成功保存{}条记录 ---", diskList.size(), successCount);
+            log.info("--- KMS数据采集服务执行完毕：共采集{}个磁盘，成功保存1条合并记录 ---", diskList.size());// 改动点3：日志更新为“1条合并记录”
 
         } catch (Exception e) {
             log.error("KMS数据采集服务执行异常", e);
@@ -92,55 +91,43 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     }
 
     /**
-     * 构建RealTimeData对象（封装CPU/内存/磁盘数据）
+     * 构建合并后的RealTimeData对象（磁盘数据组装为JSON数组）// 改动点4：新增合并构建方法
      */
-    private RealTimeData buildRealTimeData(KmsCpu cpu, KmsMem mem, KmsSysFile disk, Date collectTime) throws JsonProcessingException {
+    private RealTimeData buildMergedRealTimeData(KmsCpu cpu, KmsMem mem, List<KmsSysFile> diskList, Date collectTime) throws JsonProcessingException {
         RealTimeData data = new RealTimeData();
 
-        // 1. CPU数据：添加数值封顶（最大100%，最小0%）
-        BigDecimal cpuTotal = BigDecimal.valueOf(Arith.round(cpu.getTotal(), 2));
-        BigDecimal cpuUser = BigDecimal.valueOf(Arith.round(cpu.getUsed(), 2));
-        BigDecimal cpuSys = BigDecimal.valueOf(Arith.round(cpu.getSys(), 2));
-        BigDecimal cpuIdle = BigDecimal.valueOf(Arith.round(cpu.getFree(), 2));
-
-        // 数值封顶：确保不超过100%，不低于0%
-        cpuTotal = cpuTotal.compareTo(BigDecimal.valueOf(100)) > 0 ? BigDecimal.valueOf(100) : cpuTotal;
-        cpuTotal = cpuTotal.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cpuTotal;
-        cpuUser = cpuUser.compareTo(BigDecimal.valueOf(100)) > 0 ? BigDecimal.valueOf(100) : cpuUser;
-        cpuUser = cpuUser.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cpuUser;
-        cpuSys = cpuSys.compareTo(BigDecimal.valueOf(100)) > 0 ? BigDecimal.valueOf(100) : cpuSys;
-        cpuSys = cpuSys.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cpuSys;
-        cpuIdle = cpuIdle.compareTo(BigDecimal.valueOf(100)) > 0 ? BigDecimal.valueOf(100) : cpuIdle;
-        cpuIdle = cpuIdle.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cpuIdle;
-
-        // 赋值到RealTimeData
-        data.setCpuUsage(cpuTotal);
-        data.setCpuUserUsage(cpuUser);
-        data.setCpuSysUsage(cpuSys);
-        data.setCpuIdleUsage(cpuIdle);
+        // 1. CPU数据（逻辑不变）
+        data.setCpuUsage(BigDecimal.valueOf(Arith.round(cpu.getTotal(), 2)));
+        data.setCpuUserUsage(BigDecimal.valueOf(Arith.round(cpu.getUsed(), 2)));
+        data.setCpuSysUsage(BigDecimal.valueOf(Arith.round(cpu.getSys(), 2)));
+        data.setCpuIdleUsage(BigDecimal.valueOf(Arith.round(cpu.getFree(), 2)));
         data.setCpuCoreNum(cpu.getCpuNum());
 
-        // 2. 内存数据（逻辑不变，正常）
+        // 2. 内存数据（逻辑不变）
         double memTotalGb = Arith.div(mem.getTotal(), 1024 * 1024 * 1024, 2);
         double memUsedGb = Arith.div(mem.getUsed(), 1024 * 1024 * 1024, 2);
         double memFreeGb = Arith.div(mem.getFree(), 1024 * 1024 * 1024, 2);
-        double memUsage = Arith.mul(Arith.div(mem.getUsed(), mem.getTotal(), 4), 100); // 0-100%
+        double memUsage = Arith.mul(Arith.div(mem.getUsed(), mem.getTotal(), 4), 100);
 
         data.setMemTotal(BigDecimal.valueOf(memTotalGb));
         data.setMemUsed(BigDecimal.valueOf(memUsedGb));
         data.setMemFree(BigDecimal.valueOf(memFreeGb));
         data.setMemUsage(BigDecimal.valueOf(Arith.round(memUsage, 2)));
 
-        // 3. 磁盘数据（逻辑不变，正常）
-        Map<String, Object> diskMap = new HashMap<>();
-        diskMap.put("path", disk.getDirName());
-        diskMap.put("type", disk.getTypeName());
-        diskMap.put("total", Arith.round(Double.parseDouble(disk.getTotal().replace("GB", "")), 2));
-        diskMap.put("used", Arith.round(Double.parseDouble(disk.getUsed().replace("GB", "")), 2));
-        diskMap.put("free", Arith.round(Double.parseDouble(disk.getFree().replace("GB", "")), 2));
-        diskMap.put("usage", Arith.round(disk.getUsage(), 2));
-
-        data.setDiskData(objectMapper.writeValueAsString(diskMap));
+        // 3. 磁盘数据：多个磁盘组装为List<Map>，再序列化为JSON数组// 改动点5：磁盘数据改为数组格式
+        List<Map<String, Object>> diskMapList = new ArrayList<>();
+        for (KmsSysFile disk : diskList) {
+            Map<String, Object> diskMap = new HashMap<>();
+            diskMap.put("path", disk.getDirName());
+            diskMap.put("type", disk.getTypeName());
+            diskMap.put("total", Arith.round(Double.parseDouble(disk.getTotal().replace("GB", "")), 2));
+            diskMap.put("used", Arith.round(Double.parseDouble(disk.getUsed().replace("GB", "")), 2));
+            diskMap.put("free", Arith.round(Double.parseDouble(disk.getFree().replace("GB", "")), 2));
+            diskMap.put("usage", Arith.round(disk.getUsage(), 2));
+            diskMapList.add(diskMap);
+        }
+        // 序列化为JSON数组（如[{"path":"C:\\",...}, {...}]）
+        data.setDiskData(objectMapper.writeValueAsString(diskMapList));
 
         // 4. 基础字段（逻辑不变）
         data.setCollectTime(collectTime);
@@ -150,73 +137,50 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     }
 
     /**
-     * 采集CPU信息（改用Tick差值计算，无版本兼容问题）
+     * 采集CPU信息（兼容旧版Oshi API，手动处理多核逻辑）
      */
     private KmsCpu collectCpu() throws InterruptedException {
         CentralProcessor processor = HARDWARE.getProcessor();
         KmsCpu cpu = new KmsCpu();
-        // 设置CPU逻辑核心数
-        cpu.setCpuNum(processor.getLogicalProcessorCount());
+        int cpuCoreNum = processor.getLogicalProcessorCount();
+        cpu.setCpuNum(cpuCoreNum);
 
-        // 1. 第一次获取CPU Tick快照（累计值）
+        // 1. 获取CPU Tick快照
         long[] prevTicks = processor.getSystemCpuLoadTicks();
-        // 休眠1秒：确保两次快照有时间差，能计算出使用率变化
         TimeUnit.SECONDS.sleep(1);
-        // 2. 第二次获取CPU Tick快照（累计值）
         long[] currTicks = processor.getSystemCpuLoadTicks();
 
-        // 3. 计算两次快照的Tick差值（核心：用差值避免多核心叠加问题）
-        long prevUser = prevTicks[TickType.USER.ordinal()];
-        long prevSys = prevTicks[TickType.SYSTEM.ordinal()];
-        long prevIdle = prevTicks[TickType.IDLE.ordinal()];
-        long prevIoWait = prevTicks[TickType.IOWAIT.ordinal()];
+        // 2. 计算各状态Tick差值
+        long userTick = currTicks[CentralProcessor.TickType.USER.ordinal()] - prevTicks[CentralProcessor.TickType.USER.ordinal()];
+        long sysTick = currTicks[CentralProcessor.TickType.SYSTEM.ordinal()] - prevTicks[CentralProcessor.TickType.SYSTEM.ordinal()];
+        long waitTick = currTicks[CentralProcessor.TickType.IOWAIT.ordinal()] - prevTicks[CentralProcessor.TickType.IOWAIT.ordinal()];
+        long idleTick = currTicks[CentralProcessor.TickType.IDLE.ordinal()] - prevTicks[CentralProcessor.TickType.IDLE.ordinal()];
 
-        long currUser = currTicks[TickType.USER.ordinal()];
-        long currSys = currTicks[TickType.SYSTEM.ordinal()];
-        long currIdle = currTicks[TickType.IDLE.ordinal()];
-        long currIoWait = currTicks[TickType.IOWAIT.ordinal()];
+        long totalTick = userTick + sysTick + waitTick + idleTick;
+        totalTick = totalTick == 0 ? 1 : totalTick;
 
-        // 差值 = 当前Tick - 之前Tick（得到1秒内的Tick变化量）
-        long diffUser = currUser - prevUser;
-        long diffSys = currSys - prevSys;
-        long diffIdle = currIdle - prevIdle;
-        long diffIoWait = currIoWait - prevIoWait;
+        // 3. 计算总使用率（未归一化）
+        long totalUsedTick = totalTick - idleTick;
+        double totalUsageRaw = (double) totalUsedTick / totalTick;
 
-        // 4. 计算总Tick变化量和非空闲Tick变化量
-        long diffTotal = diffUser + diffSys + diffIdle + diffIoWait; // 总变化量（1秒内的总Tick）
-        long diffNonIdle = diffUser + diffSys + diffIoWait;         // 非空闲变化量（用户+系统+IO等待）
+        // 4. 【关键修复】将总使用率除以核心数，进行归一化
+        double totalUsageNormalized = totalUsageRaw / cpuCoreNum;
 
-        // 5. 计算CPU总使用率（非空闲占比）
-        double totalUsage = 0.0;
-        if (diffTotal > 0) { // 避免除零异常
-            totalUsage = (double) diffNonIdle / diffTotal * 100; // 转为百分比（0-100%）
-        }
-        cpu.setTotal(totalUsage);
+        // 5. 计算细分使用率（基于总时间）
+        double userUsage = (double) userTick / totalTick;
+        double sysUsage = (double) sysTick / totalTick;
+        double idleUsage = (double) idleTick / totalTick;
 
-        // 6. 计算用户/系统/空闲使用率（基于差值占比）
-        double userUsage = 0.0;
-        double sysUsage = 0.0;
-        double idleUsage = 0.0;
-        if (diffNonIdle > 0) { // 非空闲Tick不为0时计算用户/系统占比
-            userUsage = (double) diffUser / diffNonIdle * 100;
-            sysUsage = (double) diffSys / diffNonIdle * 100;
-        }
-        if (diffTotal > 0) { // 总Tick不为0时计算空闲占比
-            idleUsage = (double) diffIdle / diffTotal * 100;
-        }
+        // 6. 【关键修复】同样对细分使用率进行归一化
+        userUsage = userUsage / cpuCoreNum;
+        sysUsage = sysUsage / cpuCoreNum;
+        idleUsage = idleUsage / cpuCoreNum;
 
-        // 7. 确保数值在0-100%范围内（避免极端情况）
-        cpu.setUsed(Math.max(0.0, Math.min(100.0, userUsage)));
-        cpu.setSys(Math.max(0.0, Math.min(100.0, sysUsage)));
-        cpu.setFree(Math.max(0.0, Math.min(100.0, idleUsage)));
-
-        // 日志打印（验证数值是否正常）
-        log.debug("CPU采集结果：核心数={}, 总使用率={}%, 用户使用率={}%, 系统使用率={}%, 空闲率={}%",
-                cpu.getCpuNum(),
-                Arith.round(cpu.getTotal(), 2),
-                Arith.round(cpu.getUsed(), 2),
-                Arith.round(cpu.getSys(), 2),
-                Arith.round(cpu.getFree(), 2));
+        // 7. 转换为百分比（0-100%）并赋值
+        cpu.setTotal(totalUsageNormalized * 100);
+        cpu.setUsed(userUsage * 100);
+        cpu.setSys(sysUsage * 100);
+        cpu.setFree(idleUsage * 100);
 
         return cpu;
     }
@@ -227,7 +191,6 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     private KmsMem collectMem() {
         GlobalMemory memory = HARDWARE.getMemory();
         KmsMem mem = new KmsMem();
-        // Oshi的getTotal()返回字节数，直接赋值（后续计算GB时转换）
         mem.setTotal(memory.getTotal());         // 总量（字节）
         mem.setUsed(memory.getTotal() - memory.getAvailable()); // 已用（字节）
         mem.setFree(memory.getAvailable());      // 可用（字节）
@@ -281,10 +244,10 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
         // CPU日志
         log.info("【CPU采集结果】核心数：{}，总使用率：{}%，用户使用率：{}%，系统使用率：{}%，空闲率：{}%",
                 cpu.getCpuNum(),
-                Arith.round(cpu.getTotal() * 100, 2),
-                Arith.round(cpu.getUsed() * 100, 2),
-                Arith.round(cpu.getSys() * 100, 2),
-                Arith.round(cpu.getFree() * 100, 2));
+                Arith.round(cpu.getTotal(), 2),
+                Arith.round(cpu.getUsed(), 2),
+                Arith.round(cpu.getSys(), 2),
+                Arith.round(cpu.getFree(), 2));
 
         // 内存日志
         double memTotalGb = Arith.div(mem.getTotal(), 1024 * 1024 * 1024, 2);
