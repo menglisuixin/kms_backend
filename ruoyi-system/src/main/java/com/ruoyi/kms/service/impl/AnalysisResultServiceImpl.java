@@ -7,6 +7,7 @@ import com.ruoyi.kms.domain.AnalysisResult;
 import com.ruoyi.kms.domain.RealTimeData;
 import com.ruoyi.kms.domain.server.KmsSysFile;
 import com.ruoyi.kms.mapper.AnalysisResultMapper;
+import com.ruoyi.kms.mapper.RealTimeDataMapper;
 import com.ruoyi.kms.service.IAnalysisResultService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 预警结果Service业务层处理
@@ -28,6 +32,9 @@ public class AnalysisResultServiceImpl implements IAnalysisResultService {
 
     @Autowired
     private AnalysisResultMapper analysisResultMapper;
+
+    @Autowired
+    private RealTimeDataMapper realTimeDataMapper;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -61,26 +68,78 @@ public class AnalysisResultServiceImpl implements IAnalysisResultService {
     @Override
     public void generateWarning(RealTimeData data, KmsSysFile disk) {
         try {
-            // 1. 获取当前磁盘的关键指标（如使用率）
-            double diskUsage = disk.getUsage();
-            String diskPath = disk.getDirName();
-
-            // 2. 执行预警判断逻辑（示例：使用率超过90%触发预警）
-            if (diskUsage > 90.0) {
-                log.warn("磁盘预警：路径[{}]使用率过高，当前使用率：{}%", diskPath, diskUsage);
-                // 实际业务中可在这里创建预警记录、发送通知等
+            if (data == null || disk == null) {
+                log.error("生成预警失败：实时数据或磁盘信息为空");
+                return;
             }
+            Long dataId = data.getId(); // 关联的实时数据ID
 
-            // 3. 也可结合CPU/内存信息进行综合判断
-            BigDecimal cpuUsage = data.getCpuUsage();
-            BigDecimal memUsage = data.getMemUsage();
-            if (diskUsage > 85.0 && cpuUsage.compareTo(new BigDecimal("80")) > 0) {
-                log.warn("综合预警：路径[{}]使用率较高且CPU负载过高", diskPath);
+            // 1. CPU预警：调用checkAndCreateWarning保存记录
+            checkAndCreateWarning(
+                    dataId,
+                    "CPU使用率过高",
+                    data.getCpuUsage()
+            );
+
+            // 2. 内存预警：同理保存
+            checkAndCreateWarning(
+                    dataId,
+                    "内存使用率过高",
+                    data.getMemUsage()
+            );
+
+            // 3. 磁盘预警：将double转为BigDecimal，适配方法参数
+            BigDecimal diskUsage = BigDecimal.valueOf(disk.getUsage());
+            checkAndCreateWarning(
+                    dataId,
+                    "磁盘[" + disk.getDirName() + "]使用率过高",
+                    diskUsage
+            );
+
+            // 4. 综合预警（CPU+磁盘同时高负载）：直接创建记录
+            if (disk.getUsage() > 85.0 && data.getCpuUsage().compareTo(new BigDecimal("80")) > 0) {
+                createWarningRecord(
+                        dataId,
+                        "综合预警：CPU+磁盘高负载",
+                        "严重预警"
+                );
             }
 
         } catch (Exception e) {
-            log.error("磁盘[{}]预警判断失败", disk.getDirName(), e);
+            log.error("磁盘[{}]预警处理失败", disk.getDirName(), e);
         }
+    }
+
+    // RealTimeDataServiceImpl 中新增方法
+    public List<Map<String, Object>> selectRealTimeDataWithWarning(RealTimeData realTimeData) {
+        // 1. 查询实时数据列表
+        List<RealTimeData> dataList = realTimeDataMapper.selectRealTimeDataList(realTimeData);
+
+        // 2. 转换为Map并添加预警状态字段
+        return dataList.stream().map(data -> {
+            Map<String, Object> map = new HashMap<>();
+            // 复制实时数据字段（使用BeanUtils或手动put）
+            map.put("id", data.getId());
+            map.put("cpuUsage", data.getCpuUsage());
+            map.put("memUsage", data.getMemUsage());
+            map.put("diskData", data.getDiskData());
+            map.put("collectTime", data.getCollectTime());
+
+            // 3. 查询该实时数据关联的预警记录
+            AnalysisResult query = new AnalysisResult();
+            query.setDataId(data.getId());
+            List<AnalysisResult> warnings = analysisResultMapper.selectAnalysisResultList(query);
+
+            // 4. 计算预警状态（0=无预警，1=有未处理，2=已处理）
+            long unhandled = warnings.stream().filter(w -> w.getIsHandled() == 0).count();
+            int warningStatus = unhandled > 0 ? 1 : (warnings.size() > 0 ? 2 : 0);
+
+            // 5. 添加预警扩展字段
+            map.put("warningStatus", warningStatus);
+            map.put("warningCount", warnings.size());
+
+            return map;
+        }).collect(Collectors.toList());
     }
 
     /**
@@ -217,4 +276,5 @@ public class AnalysisResultServiceImpl implements IAnalysisResultService {
     public int selectWarningCount(Integer isHandled) {
         return analysisResultMapper.selectWarningCount(isHandled);
     }
+
 }

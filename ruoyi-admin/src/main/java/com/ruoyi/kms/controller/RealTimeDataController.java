@@ -1,6 +1,7 @@
 package com.ruoyi.kms.controller;
 
 import java.util.List;
+import java.util.Map;
 import javax.servlet.http.HttpServletResponse;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,12 +36,20 @@ public class RealTimeDataController extends BaseController
     /**
      * 查询关键指标实时数据列表
      */
+//    @PreAuthorize("@ss.hasPermi('kms:realTimeData:list')")
+//    @GetMapping("/list")
+//    public TableDataInfo list(RealTimeData realTimeData)
+//    {
+//        startPage();
+//        List<RealTimeData> list = realTimeDataService.selectRealTimeDataList(realTimeData);
+//        return getDataTable(list);
+//    }
     @PreAuthorize("@ss.hasPermi('kms:realTimeData:list')")
     @GetMapping("/list")
-    public TableDataInfo list(RealTimeData realTimeData)
-    {
+    public TableDataInfo list(RealTimeData realTimeData) {
         startPage();
-        List<RealTimeData> list = realTimeDataService.selectRealTimeDataList(realTimeData);
+        // 调用新增的方法，返回带预警状态的Map列表
+        List<Map<String, Object>> list = realTimeDataService.selectRealTimeDataWithWarning(realTimeData);
         return getDataTable(list);
     }
 
@@ -77,6 +86,5 @@ public class RealTimeDataController extends BaseController
     {
         return toAjax(realTimeDataService.insertRealTimeData(realTimeData));
     }
-
 
 }

@@ -1,6 +1,8 @@
 package com.ruoyi.kms.service;
 
 import java.util.List;
+import java.util.Map;
+
 import com.ruoyi.kms.domain.RealTimeData;
 
 /**
@@ -64,4 +66,7 @@ public interface IRealTimeDataService
      * @return 关键指标实时数据
      */
     public RealTimeData selectLatestData();
+
+    // 新增：声明“查询带预警状态的实时数据”方法（返回Map列表）
+    List<Map<String, Object>> selectRealTimeDataWithWarning(RealTimeData realTimeData);
 }
