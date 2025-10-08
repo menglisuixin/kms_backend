@@ -92,7 +92,6 @@ public class AnalysisResultServiceImpl implements IAnalysisResultService
 
     /**
      * 删除预警结果信息
-     *
      * @param id 预警结果主键
      * @return 结果
      */
