@@ -55,34 +55,32 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     public void executeCollection() {
         log.info("--- KMS数据采集服务开始执行 ---");
         try {
-            // 1. 采集CPU（1次/采集周期，所有磁盘共用）
+            // 1. 采集各类信息
             KmsCpu cpu = collectCpu();
-            // 2. 采集内存（1次/采集周期，所有磁盘共用）
             KmsMem mem = collectMem();
-            // 3. 采集所有有效磁盘（过滤虚拟分区，保留实际磁盘）
             List<KmsSysFile> diskList = collectAllDisks();
 
-            // 4. 打印采集日志（便于调试）
+            // 2. 打印采集日志
             printCollectionLog(cpu, mem, diskList);
 
-            // 5. 构建合并后的单条记录（所有磁盘数据组装为JSON数组）// 改动点1：删除磁盘循环，改为单条记录构建
+            // 3. 构建合并后的单条记录
             Date collectTime = new Date();
             RealTimeData data = buildMergedRealTimeData(cpu, mem, diskList, collectTime);
 
-            // 6. 保存单条记录到数据库
+            // 4. 保存单条记录到数据库
             int rows = realTimeDataService.insertRealTimeData(data);
             if (rows > 0) {
                 log.info("所有磁盘数据合并保存成功，记录ID：{}", data.getId());
-                // 7. 循环触发每个磁盘的预警判断（基于单条记录，传入对应磁盘信息）// 改动点2：基于单条记录循环预警
-//                这里可能存在问题，可能需要对方法进行重载，
+                // 5. 循环触发每个磁盘的预警判断（传入单条记录+当前磁盘信息）
                 for (KmsSysFile disk : diskList) {
-                    analysisResultService.generateWarning(data); // 需改造generateWarning支持传入磁盘参数
+                    // 调用重载方法，同时传入整条记录和当前磁盘信息
+                    analysisResultService.generateWarning(data, disk);
                 }
             } else {
                 log.error("合并数据保存失败");
             }
 
-            log.info("--- KMS数据采集服务执行完毕：共采集{}个磁盘，成功保存1条合并记录 ---", diskList.size());// 改动点3：日志更新为“1条合并记录”
+            log.info("--- KMS数据采集服务执行完毕：共采集{}个磁盘，成功保存1条合并记录 ---", diskList.size());
 
         } catch (Exception e) {
             log.error("KMS数据采集服务执行异常", e);

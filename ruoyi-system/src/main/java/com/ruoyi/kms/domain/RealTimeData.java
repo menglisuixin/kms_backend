@@ -1,5 +1,6 @@
 package com.ruoyi.kms.domain;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.ruoyi.common.annotation.Excel;
@@ -65,8 +66,8 @@ public class RealTimeData extends BaseEntity {
     @Excel(name = "磁盘数据", type = Excel.Type.EXPORT) // 导出时显示 JSON 字符串
     private String diskData; // 直接用 String 存储 JSON，无需自定义实体
 
-    /** 采集时间 */
     @Excel(name = "采集时间", width = 30, dateFormat = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8") // 新增注解
     private Date collectTime;
 
     /** 数据有效性（1=有效，0=无效） */

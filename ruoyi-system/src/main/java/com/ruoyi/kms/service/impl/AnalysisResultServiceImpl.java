@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.kms.domain.AnalysisResult;
 import com.ruoyi.kms.domain.RealTimeData;
+import com.ruoyi.kms.domain.server.KmsSysFile;
 import com.ruoyi.kms.mapper.AnalysisResultMapper;
 import com.ruoyi.kms.service.IAnalysisResultService;
 import org.slf4j.Logger;
@@ -37,25 +38,49 @@ public class AnalysisResultServiceImpl implements IAnalysisResultService {
     private static final BigDecimal LEVEL3_THRESHOLD = new BigDecimal("90");   // 严重预警
     private static final BigDecimal MAX_THRESHOLD = new BigDecimal("100");     // 最大使用率
 
+
+//    public void generateWarning(RealTimeData realTimeData) {
+//        if (realTimeData == null) {
+//            log.error("生成预警失败：实时数据为空");
+//            return;
+//        }
+//
+//        // CPU预警判断
+//        checkAndCreateWarning(realTimeData.getId(), "CPU过高", realTimeData.getCpuUsage());
+//
+//        // 内存预警判断
+//        checkAndCreateWarning(realTimeData.getId(), "内存过高", realTimeData.getMemUsage());
+//
+//        // 磁盘预警判断（从JSON解析使用率）
+//        BigDecimal diskUsage = parseDiskUsage(realTimeData.getDiskData());
+//        checkAndCreateWarning(realTimeData.getId(), "磁盘过高", diskUsage);
+//    }
     /**
      * 核心方法：根据实时数据生成预警
      */
     @Override
-    public void generateWarning(RealTimeData realTimeData) {
-        if (realTimeData == null) {
-            log.error("生成预警失败：实时数据为空");
-            return;
+    public void generateWarning(RealTimeData data, KmsSysFile disk) {
+        try {
+            // 1. 获取当前磁盘的关键指标（如使用率）
+            double diskUsage = disk.getUsage();
+            String diskPath = disk.getDirName();
+
+            // 2. 执行预警判断逻辑（示例：使用率超过90%触发预警）
+            if (diskUsage > 90.0) {
+                log.warn("磁盘预警：路径[{}]使用率过高，当前使用率：{}%", diskPath, diskUsage);
+                // 实际业务中可在这里创建预警记录、发送通知等
+            }
+
+            // 3. 也可结合CPU/内存信息进行综合判断
+            BigDecimal cpuUsage = data.getCpuUsage();
+            BigDecimal memUsage = data.getMemUsage();
+            if (diskUsage > 85.0 && cpuUsage.compareTo(new BigDecimal("80")) > 0) {
+                log.warn("综合预警：路径[{}]使用率较高且CPU负载过高", diskPath);
+            }
+
+        } catch (Exception e) {
+            log.error("磁盘[{}]预警判断失败", disk.getDirName(), e);
         }
-
-        // CPU预警判断
-        checkAndCreateWarning(realTimeData.getId(), "CPU过高", realTimeData.getCpuUsage());
-
-        // 内存预警判断
-        checkAndCreateWarning(realTimeData.getId(), "内存过高", realTimeData.getMemUsage());
-
-        // 磁盘预警判断（从JSON解析使用率）
-        BigDecimal diskUsage = parseDiskUsage(realTimeData.getDiskData());
-        checkAndCreateWarning(realTimeData.getId(), "磁盘过高", diskUsage);
     }
 
     /**

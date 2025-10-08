@@ -3,6 +3,7 @@ package com.ruoyi.kms.service;
 import java.util.List;
 import com.ruoyi.kms.domain.AnalysisResult;
 import com.ruoyi.kms.domain.RealTimeData;
+import com.ruoyi.kms.domain.server.KmsSysFile;
 
 /**
  * 预警结果Service接口
@@ -64,7 +65,7 @@ public interface IAnalysisResultService
      * 根据新采集的数据生成预警
      * @param realTimeData 最新的实时数据
      */
-    public void generateWarning(RealTimeData realTimeData);
+    void generateWarning(RealTimeData data, KmsSysFile disk);
 
     /**
      * 查询预警数量
