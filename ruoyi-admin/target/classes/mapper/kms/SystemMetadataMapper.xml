@@ -3,29 +3,31 @@
 PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.kms.mapper.SystemMetadataMapper">
-    
+
     <resultMap type="SystemMetadata" id="SystemMetadataResult">
         <result property="id"    column="id"    />
         <result property="moduleName"    column="module_name"    />
         <result property="configKey"    column="config_key"    />
-        <result property="configValue"    column="config_value"    />
+        <result property="warningLevel1Value"    column="warning_level_1_value"    />
+        <result property="warningLevel2Value"    column="warning_level_2_value"    />
+        <result property="warningLevel3Value"    column="warning_level_3_value"    />
         <result property="updateTime"    column="update_time"    />
         <result property="remark"    column="remark"    />
     </resultMap>
 
     <sql id="selectSystemMetadataVo">
-        select id, module_name, config_key, config_value, update_time, remark from system_metadata
+        select id, module_name, config_key, warning_level_1_value, warning_level_2_value,
+               warning_level_3_value, update_time, remark from system_metadata
     </sql>
 
     <select id="selectSystemMetadataList" parameterType="SystemMetadata" resultMap="SystemMetadataResult">
         <include refid="selectSystemMetadataVo"/>
-        <where>  
+        <where>
             <if test="moduleName != null  and moduleName != ''"> and module_name like concat('%', #{moduleName}, '%')</if>
             <if test="configKey != null  and configKey != ''"> and config_key = #{configKey}</if>
-            <if test="configValue != null  and configValue != ''"> and config_value = #{configValue}</if>
         </where>
     </select>
-    
+
     <select id="selectSystemMetadataById" parameterType="Long" resultMap="SystemMetadataResult">
         <include refid="selectSystemMetadataVo"/>
         where id = #{id}
@@ -36,17 +38,21 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="moduleName != null and moduleName != ''">module_name,</if>
             <if test="configKey != null and configKey != ''">config_key,</if>
-            <if test="configValue != null and configValue != ''">config_value,</if>
+            <if test="warningLevel1Value != null and warningLevel1Value != ''">warning_level_1_value,</if>
+            <if test="warningLevel2Value != null and warningLevel2Value != ''">warning_level_2_value,</if>
+            <if test="warningLevel3Value != null and warningLevel3Value != ''">warning_level_3_value,</if>
             <if test="updateTime != null">update_time,</if>
             <if test="remark != null">remark,</if>
-         </trim>
+        </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
             <if test="moduleName != null and moduleName != ''">#{moduleName},</if>
             <if test="configKey != null and configKey != ''">#{configKey},</if>
-            <if test="configValue != null and configValue != ''">#{configValue},</if>
+            <if test="warningLevel1Value != null and warningLevel1Value != ''">#{warningLevel1Value},</if>
+            <if test="warningLevel2Value != null and warningLevel2Value != ''">#{warningLevel2Value},</if>
+            <if test="warningLevel3Value != null and warningLevel3Value != ''">#{warningLevel3Value},</if>
             <if test="updateTime != null">#{updateTime},</if>
             <if test="remark != null">#{remark},</if>
-         </trim>
+        </trim>
     </insert>
 
     <update id="updateSystemMetadata" parameterType="SystemMetadata">
@@ -54,7 +60,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <trim prefix="SET" suffixOverrides=",">
             <if test="moduleName != null and moduleName != ''">module_name = #{moduleName},</if>
             <if test="configKey != null and configKey != ''">config_key = #{configKey},</if>
-            <if test="configValue != null and configValue != ''">config_value = #{configValue},</if>
+            <if test="warningLevel1Value != null and warningLevel1Value != ''">warning_level_1_value = #{warningLevel1Value},</if>
+            <if test="warningLevel2Value != null and warningLevel2Value != ''">warning_level_2_value = #{warningLevel2Value},</if>
+            <if test="warningLevel3Value != null and warningLevel3Value != ''">warning_level_3_value = #{warningLevel3Value},</if>
             <if test="updateTime != null">update_time = #{updateTime},</if>
             <if test="remark != null">remark = #{remark},</if>
         </trim>
@@ -66,14 +74,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </delete>
 
     <delete id="deleteSystemMetadataByIds" parameterType="String">
-        delete from system_metadata where id in 
+        delete from system_metadata where id in
         <foreach item="id" collection="array" open="(" separator="," close=")">
             #{id}
         </foreach>
     </delete>
+
     <select id="selectByModuleAndKey" parameterType="map" resultMap="SystemMetadataResult">
         select
-            id, module_name, config_key, config_value, update_time, remark
+            id, module_name, config_key, warning_level_1_value, warning_level_2_value,
+            warning_level_3_value, update_time, remark
         from
             system_metadata
         where

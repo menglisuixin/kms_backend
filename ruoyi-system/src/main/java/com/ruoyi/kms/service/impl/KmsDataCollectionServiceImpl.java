@@ -1,5 +1,7 @@
 package com.ruoyi.kms.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.kms.domain.server.KmsCpu;
 import com.ruoyi.kms.domain.server.KmsMem;
 import com.ruoyi.kms.domain.server.KmsSysFile;
@@ -21,204 +23,230 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * KMS数据采集Service（仅负责CPU/内存/磁盘数据采集与存储，无预警逻辑）
+ *
+ * @author hby
+ * @date 2025-09-28
+ */
 @Service
 public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     private static final Logger log = LoggerFactory.getLogger(KmsDataCollectionServiceImpl.class);
+
     @Autowired
     private IRealTimeDataService realTimeDataService;
+
     @Autowired
     private IAnalysisResultService analysisResultService;
 
-    // Oshi核心工具
+    // JSON工具：用于磁盘数据转JSON
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    // Oshi硬件信息采集工具（静态初始化，避免重复创建）
     private static final SystemInfo SYSTEM_INFO = new SystemInfo();
     private static final HardwareAbstractionLayer HARDWARE = SYSTEM_INFO.getHardware();
     private static final OperatingSystem OS = SYSTEM_INFO.getOperatingSystem();
 
     @Override
     public void executeCollection() {
-        log.info("--- KMS数据采集服务开始执行（复用若依实体，多磁盘支持）---");
+        log.info("--- KMS数据采集服务开始执行 ---");
         try {
-            // 1. 采集CPU、内存（只采集1次，所有磁盘记录共用）
+            // 1. 采集CPU（1次/采集周期，所有磁盘共用）
             KmsCpu cpu = collectCpu();
+            // 2. 采集内存（1次/采集周期，所有磁盘共用）
             KmsMem mem = collectMem();
-            // 2. 采集所有有效磁盘（返回C/D/E等磁盘列表）
+            // 3. 采集所有有效磁盘（过滤虚拟分区，保留实际磁盘）
             List<KmsSysFile> diskList = collectAllDisks();
 
-            // 3. 打印采集日志（先打印CPU和内存，再打印每个磁盘）
-            log.info("【CPU指标】核心数: {}个, 总使用率: {}%, 用户使用率: {}%, 系统使用率: {}%, 空闲率: {}%",
-                    cpu.getCpuNum(),
-                    Arith.round(cpu.getTotal(), 2),
-                    Arith.round(cpu.getUsed(), 2),
-                    Arith.round(cpu.getSys(), 2),
-                    Arith.round(cpu.getFree(), 2));
-            log.info("【内存指标】总量: {}GB, 已用: {}GB, 剩余: {}GB, 使用率: {}%",
-                    Arith.round(mem.getTotal(), 2),
-                    Arith.round(mem.getUsed(), 2),
-                    Arith.round(mem.getFree(), 2),
-                    Arith.round(mem.getUsage(), 2));
-            // 打印每个磁盘的日志
-            for (KmsSysFile disk : diskList) {
-                log.info("【磁盘指标】路径: {}, 类型: {}, 总量: {}, 已用: {}, 剩余: {}, 使用率: {}%",
-                        disk.getDirName(),
-                        disk.getTypeName(),
-                        disk.getTotal(),
-                        disk.getUsed(),
-                        disk.getFree(),
-                        Arith.round(disk.getUsage(), 2));
-            }
+            // 4. 打印采集日志（便于调试）
+            printCollectionLog(cpu, mem, diskList);
 
-            // 4. 循环保存每个磁盘的记录（核心修改：每个磁盘1条记录）
-            Date currentTime = new Date(); // 所有记录用同一个采集时间，便于后续关联查询
+            // 5. 循环保存每个磁盘的完整记录（1个磁盘1条记录）
+            Date collectTime = new Date(); // 所有记录统一采集时间
             int successCount = 0;
             for (KmsSysFile disk : diskList) {
-                RealTimeData data = new RealTimeData();
-
-                // 4.1 填充CPU指标（所有磁盘记录共用同一套CPU数据）
-                data.setCpuUsage(BigDecimal.valueOf(Arith.round(cpu.getTotal(), 2)));
-                data.setCpuUserUsage(BigDecimal.valueOf(Arith.round(cpu.getUsed(), 2)));
-                data.setCpuSysUsage(BigDecimal.valueOf(Arith.round(cpu.getSys(), 2)));
-                data.setCpuIdleUsage(BigDecimal.valueOf(Arith.round(cpu.getFree(), 2)));
-                data.setCpuCoreNum(cpu.getCpuNum());
-
-                // 4.2 填充内存指标（所有磁盘记录共用同一套内存数据）
-                data.setMemTotal(BigDecimal.valueOf(Arith.round(mem.getTotal(), 2)));
-                data.setMemUsed(BigDecimal.valueOf(Arith.round(mem.getUsed(), 2)));
-                data.setMemFree(BigDecimal.valueOf(Arith.round(mem.getFree(), 2)));
-                data.setMemUsage(BigDecimal.valueOf(Arith.round(mem.getUsage(), 2)));
-
-                // 4.3 填充当前磁盘的指标（每个记录对应不同磁盘）
-                data.setDiskPath(disk.getDirName());
-                data.setDiskType(disk.getTypeName());
-                // 提取磁盘容量数字（去掉"GB"后缀）
-                double diskTotalNum = Double.parseDouble(disk.getTotal().replace("GB", ""));
-                double diskUsedNum = Double.parseDouble(disk.getUsed().replace("GB", ""));
-                double diskFreeNum = Double.parseDouble(disk.getFree().replace("GB", ""));
-                data.setDiskTotal(BigDecimal.valueOf(Arith.round(diskTotalNum, 2)));
-                data.setDiskUsed(BigDecimal.valueOf(Arith.round(diskUsedNum, 2)));
-                data.setDiskFree(BigDecimal.valueOf(Arith.round(diskFreeNum, 2)));
-                data.setDiskUsage(BigDecimal.valueOf(Arith.round(disk.getUsage(), 2)));
-
-                // 4.4 基础字段（所有记录用同一采集时间）
-                data.setCollectTime(currentTime);
-                data.setIsValid(1);
-
-                // 4.5 保存当前磁盘的记录到数据库
-                int insertRows = realTimeDataService.insertRealTimeData(data);
-                if (insertRows > 0) {
+                RealTimeData data = buildRealTimeData(cpu, mem, disk, collectTime);
+                // 保存到数据库
+                int rows = realTimeDataService.insertRealTimeData(data);
+                if (rows > 0) {
                     successCount++;
-                    log.info("磁盘[{}]数据已成功写入 real_time_data 表，ID: {}", disk.getDirName(), data.getId());
-                    // （可选）每个磁盘都触发一次告警判断（如果需要按磁盘单独告警）
+                    log.info("磁盘[{}]数据保存成功，记录ID：{}", disk.getDirName(), data.getId());
+                    // 触发预警判断（每个磁盘单独判断）
                     analysisResultService.generateWarning(data);
                 } else {
-                    log.error("磁盘[{}]数据写入 real_time_data 表失败！", disk.getDirName());
+                    log.error("磁盘[{}]数据保存失败", disk.getDirName());
                 }
             }
 
-            log.info("--- KMS数据采集服务执行完毕，共采集{}个磁盘，成功保存{}条记录 ---", diskList.size(), successCount);
+            log.info("--- KMS数据采集服务执行完毕：共采集{}个磁盘，成功保存{}条记录 ---", diskList.size(), successCount);
 
         } catch (Exception e) {
-            log.error("KMS数据采集服务执行失败，发生严重异常！", e);
-            throw new RuntimeException("数据采集服务内部错误", e);
+            log.error("KMS数据采集服务执行异常", e);
+            throw new RuntimeException("数据采集失败", e);
         }
     }
 
     /**
-     * 采集CPU信息（按若依逻辑传参，完美复用KmsCpu）
+     * 构建RealTimeData对象（封装CPU/内存/磁盘数据）
+     */
+    private RealTimeData buildRealTimeData(KmsCpu cpu, KmsMem mem, KmsSysFile disk, Date collectTime) throws JsonProcessingException {
+        RealTimeData data = new RealTimeData();
+
+        // 1. 封装CPU数据
+        data.setCpuUsage(BigDecimal.valueOf(Arith.round(cpu.getTotal() * 100, 2))); // 转为百分比（原0-1→0-100）
+        data.setCpuUserUsage(BigDecimal.valueOf(Arith.round(cpu.getUsed() * 100, 2)));
+        data.setCpuSysUsage(BigDecimal.valueOf(Arith.round(cpu.getSys() * 100, 2)));
+        data.setCpuIdleUsage(BigDecimal.valueOf(Arith.round(cpu.getFree() * 100, 2)));
+        data.setCpuCoreNum(cpu.getCpuNum());
+
+        // 2. 封装内存数据（转GB，保留2位小数）
+        double memTotalGb = Arith.div(mem.getTotal(), 1024 * 1024 * 1024, 2);
+        double memUsedGb = Arith.div(mem.getUsed(), 1024 * 1024 * 1024, 2);
+        double memFreeGb = Arith.div(mem.getFree(), 1024 * 1024 * 1024, 2);
+        double memUsage = Arith.mul(Arith.div(mem.getUsed(), mem.getTotal(), 4), 100); // 使用率百分比
+
+        data.setMemTotal(BigDecimal.valueOf(memTotalGb));
+        data.setMemUsed(BigDecimal.valueOf(memUsedGb));
+        data.setMemFree(BigDecimal.valueOf(memFreeGb));
+        data.setMemUsage(BigDecimal.valueOf(Arith.round(memUsage, 2)));
+
+        // 3. 封装磁盘数据（转为JSON字符串）
+        Map<String, Object> diskMap = new HashMap<>();
+        diskMap.put("path", disk.getDirName());       // 磁盘路径（如C:/）
+        diskMap.put("type", disk.getTypeName());      // 磁盘类型（如NTFS）
+        diskMap.put("total", Arith.round(Double.parseDouble(disk.getTotal().replace("GB", "")), 2)); // 总大小（GB）
+        diskMap.put("used", Arith.round(Double.parseDouble(disk.getUsed().replace("GB", "")), 2));   // 已用（GB）
+        diskMap.put("free", Arith.round(Double.parseDouble(disk.getFree().replace("GB", "")), 2));   // 剩余（GB）
+        diskMap.put("usage", Arith.round(disk.getUsage(), 2)); // 使用率（百分比）
+
+        data.setDiskData(objectMapper.writeValueAsString(diskMap));
+
+        // 4. 基础字段
+        data.setCollectTime(collectTime);
+        data.setIsValid(1); // 1=有效数据
+
+        return data;
+    }
+
+    /**
+     * 采集CPU信息（Oshi采集，返回使用率百分比）
      */
     private KmsCpu collectCpu() throws InterruptedException {
         CentralProcessor processor = HARDWARE.getProcessor();
         KmsCpu cpu = new KmsCpu();
         cpu.setCpuNum(processor.getLogicalProcessorCount());
 
-        // 1. 获取CPU tick快照
+        // 采集CPU Tick快照（间隔1秒，确保使用率准确）
         long[] prevTicks = processor.getSystemCpuLoadTicks();
         TimeUnit.SECONDS.sleep(1);
         long[] currTicks = processor.getSystemCpuLoadTicks();
 
-        // 2. 计算各部分tick差值
+        // 计算各状态Tick差值
         long userTick = currTicks[CentralProcessor.TickType.USER.ordinal()] - prevTicks[CentralProcessor.TickType.USER.ordinal()];
         long sysTick = currTicks[CentralProcessor.TickType.SYSTEM.ordinal()] - prevTicks[CentralProcessor.TickType.SYSTEM.ordinal()];
         long waitTick = currTicks[CentralProcessor.TickType.IOWAIT.ordinal()] - prevTicks[CentralProcessor.TickType.IOWAIT.ordinal()];
         long idleTick = currTicks[CentralProcessor.TickType.IDLE.ordinal()] - prevTicks[CentralProcessor.TickType.IDLE.ordinal()];
 
-        // 总使用tick（非空闲的总和）
+        // 总使用Tick（非空闲）
         long totalUsedTick = userTick + sysTick + waitTick;
-        totalUsedTick = totalUsedTick == 0 ? 1 : totalUsedTick; // 防止分母为0
-
-        // 总tick（所有类型的总和）
+        totalUsedTick = totalUsedTick == 0 ? 1 : totalUsedTick; // 避免分母为0
+        // 总Tick（所有状态）
         long totalTick = totalUsedTick + idleTick;
         totalTick = totalTick == 0 ? 1 : totalTick;
 
-        // 3. 按若依逻辑传参：传“占比”而非“具体值”
-        cpu.setTotal((double) totalUsedTick / totalTick); // 总使用占比（0-1，比如10%传0.1）
-        cpu.setUsed((double) userTick / totalUsedTick);   // 用户占总使用的比例（0-1，比如30%传0.3）
-        cpu.setSys((double) sysTick / totalUsedTick);     // 系统占总使用的比例（0-1）
-        cpu.setWait((double) waitTick / totalUsedTick);   // 等待占总使用的比例（0-1）
-        cpu.setFree((double) idleTick / totalTick);       // 空闲占比（0-1，直接算，不依赖total）
+        // 计算使用率（0-1，后续转百分比）
+        cpu.setTotal((double) totalUsedTick / totalTick);       // 总使用率
+        cpu.setUsed((double) userTick / totalUsedTick);         // 用户使用率（占总使用的比例）
+        cpu.setSys((double) sysTick / totalUsedTick);           // 系统使用率（占总使用的比例）
+        cpu.setWait((double) waitTick / totalUsedTick);         // 等待使用率（占总使用的比例）
+        cpu.setFree((double) idleTick / totalTick);             // 空闲率
 
         return cpu;
     }
 
     /**
-     * 采集内存信息，封装到若依的Mem实体
+     * 采集内存信息（Oshi采集，单位：字节）
      */
     private KmsMem collectMem() {
         GlobalMemory memory = HARDWARE.getMemory();
         KmsMem mem = new KmsMem();
-        // 若依Mem的setXxx接收字节数，直接赋值（get时会自动转GB）
-        mem.setTotal(memory.getTotal());
-        mem.setUsed(memory.getTotal() - memory.getAvailable());
-        mem.setFree(memory.getAvailable());
+        mem.setTotal(memory.getTotal());         // 总量（字节）
+        mem.setUsed(memory.getTotal() - memory.getAvailable()); // 已用（字节）
+        mem.setFree(memory.getAvailable());      // 可用（字节）
         return mem;
     }
 
     /**
-     * 采集所有有效磁盘（过滤虚拟/临时分区，保留C/D/E等实际磁盘）
+     * 采集所有有效磁盘（过滤虚拟/临时分区）
      */
     private List<KmsSysFile> collectAllDisks() {
         FileSystem fileSystem = OS.getFileSystem();
         List<KmsSysFile> diskList = new ArrayList<>();
 
         for (OSFileStore store : fileSystem.getFileStores()) {
-            // 过滤规则：排除虚拟分区、临时分区，只保留实际磁盘（如C:/、D:/）
             String mountPath = store.getMount();
-            // 1. 排除Linux系统的虚拟分区（如/dev/loop、/sys等）
-            if (mountPath.startsWith("/dev/loop") || mountPath.startsWith("/sys") || mountPath.startsWith("/proc")) {
-                continue;
-            }
-            // 2. 排除Windows的网络共享或临时分区（如\\\\server\\share）
-            if (mountPath.startsWith("\\\\") || mountPath.contains("Temporary")) {
-                continue;
-            }
-            // 3. 排除容量过小的分区（如小于1GB的分区，可根据需求调整）
             long totalSpace = store.getTotalSpace();
-            if (totalSpace < 1024 * 1024 * 1024) { // 1GB = 1024*1024*1024字节
+
+            // 过滤规则：1. 排除虚拟分区 2. 排除临时分区 3. 排除小于1GB的分区
+            if (mountPath.startsWith("/dev/loop") || mountPath.startsWith("/sys") || mountPath.startsWith("/proc") // Linux虚拟分区
+                    || mountPath.startsWith("\\\\") || mountPath.contains("Temporary") // Windows网络/临时分区
+                    || totalSpace < 1024 * 1024 * 1024) { // 小于1GB的分区
                 continue;
             }
 
-            // 封装磁盘信息（和原逻辑一致，只是每个磁盘都创建一个KmsSysFile）
-            KmsSysFile sysFile = new KmsSysFile();
-            sysFile.setDirName(mountPath); // 磁盘路径（如C:/、D:/）
-            sysFile.setTypeName(store.getType()); // 磁盘类型（如NTFS）
+            // 封装磁盘信息
+            KmsSysFile disk = new KmsSysFile();
+            disk.setDirName(mountPath);
+            disk.setTypeName(store.getType());
 
             // 计算磁盘容量（转GB，保留2位小数）
-            double totalGb = Arith.div(totalSpace, 1024 * 1024 * 1024, 4);
-            double usedGb = Arith.div(totalSpace - store.getUsableSpace(), 1024 * 1024 * 1024, 4);
-            double freeGb = Arith.div(store.getUsableSpace(), 1024 * 1024 * 1024, 4);
+            double totalGb = Arith.div(totalSpace, 1024 * 1024 * 1024, 2);
+            double usedGb = Arith.div(totalSpace - store.getUsableSpace(), 1024 * 1024 * 1024, 2);
+            double freeGb = Arith.div(store.getUsableSpace(), 1024 * 1024 * 1024, 2);
             double usage = Arith.mul(Arith.div(totalSpace - store.getUsableSpace(), totalSpace, 4), 100);
 
-            sysFile.setTotal(Arith.round(totalGb, 2) + "GB");
-            sysFile.setUsed(Arith.round(usedGb, 2) + "GB");
-            sysFile.setFree(Arith.round(freeGb, 2) + "GB");
-            sysFile.setUsage(Arith.round(usage, 2));
+            disk.setTotal(totalGb + "GB");
+            disk.setUsed(usedGb + "GB");
+            disk.setFree(freeGb + "GB");
+            disk.setUsage(Arith.round(usage, 2));
 
-            diskList.add(sysFile);
+            diskList.add(disk);
         }
+
         return diskList;
+    }
+
+    /**
+     * 打印采集日志（便于调试）
+     */
+    private void printCollectionLog(KmsCpu cpu, KmsMem mem, List<KmsSysFile> diskList) {
+        // CPU日志
+        log.info("【CPU采集结果】核心数：{}，总使用率：{}%，用户使用率：{}%，系统使用率：{}%，空闲率：{}%",
+                cpu.getCpuNum(),
+                Arith.round(cpu.getTotal() * 100, 2),
+                Arith.round(cpu.getUsed() * 100, 2),
+                Arith.round(cpu.getSys() * 100, 2),
+                Arith.round(cpu.getFree() * 100, 2));
+
+        // 内存日志
+        double memTotalGb = Arith.div(mem.getTotal(), 1024 * 1024 * 1024, 2);
+        double memUsedGb = Arith.div(mem.getUsed(), 1024 * 1024 * 1024, 2);
+        double memFreeGb = Arith.div(mem.getFree(), 1024 * 1024 * 1024, 2);
+        double memUsage = Arith.mul(Arith.div(mem.getUsed(), mem.getTotal(), 4), 100);
+        log.info("【内存采集结果】总量：{}GB，已用：{}GB，剩余：{}GB，使用率：{}%",
+                memTotalGb, memUsedGb, memFreeGb, Arith.round(memUsage, 2));
+
+        // 磁盘日志
+        log.info("【磁盘采集结果】共采集{}个有效磁盘：", diskList.size());
+        for (KmsSysFile disk : diskList) {
+            log.info("  - 路径：{}，类型：{}，总量：{}，已用：{}，剩余：{}，使用率：{}%",
+                    disk.getDirName(), disk.getTypeName(),
+                    disk.getTotal(), disk.getUsed(), disk.getFree(),
+                    disk.getUsage());
+        }
     }
 }

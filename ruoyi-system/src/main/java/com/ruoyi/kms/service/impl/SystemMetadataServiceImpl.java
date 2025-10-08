@@ -1,177 +1,93 @@
 package com.ruoyi.kms.service.impl;
 
-import java.math.BigDecimal;
-import java.util.List;
 import com.ruoyi.common.utils.DateUtils;
-import com.ruoyi.kms.domain.AnalysisResult;
-import com.ruoyi.kms.domain.RealTimeData;
-import com.ruoyi.kms.mapper.AnalysisResultMapper;
+import com.ruoyi.kms.domain.SystemMetadata;
+import com.ruoyi.kms.mapper.SystemMetadataMapper;
+import com.ruoyi.kms.service.ISystemMetadataService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import com.ruoyi.kms.mapper.SystemMetadataMapper;
-import com.ruoyi.kms.domain.SystemMetadata;
-import com.ruoyi.kms.service.ISystemMetadataService;
+
+import java.util.List;
 
 /**
- * 系统元数据Service业务层处理
- * 
+ * 系统元数据Service（仅负责元数据CRUD，无采集/预警逻辑）
+ *
  * @author hby
  * @date 2025-09-28
  */
 @Service
-public class SystemMetadataServiceImpl implements ISystemMetadataService 
-{
-
-    @Autowired
-    private AnalysisResultMapper analysisResultMapper;
-
+public class SystemMetadataServiceImpl implements ISystemMetadataService {
     @Autowired
     private SystemMetadataMapper systemMetadataMapper;
 
-    /**
-     * 核心方法：根据新采集的数据，判断是否生成预警
-     */
     @Override
-    public void generateWarning(RealTimeData realTimeData) {
-        // 查询各类资源的三级预警阈值配置
-        SystemMetadata cpuMetadata = systemMetadataMapper.selectByModuleAndKey("analyzer", "cpuUsage");
-        SystemMetadata memMetadata = systemMetadataMapper.selectByModuleAndKey("analyzer", "memUsage");
-        SystemMetadata diskMetadata = systemMetadataMapper.selectByModuleAndKey("analyzer", "diskUsage");
-
-        // 健壮性检查
-        if (cpuMetadata != null) {
-            checkAndCreateWarning(realTimeData.getId(), "CPU过高",
-                    realTimeData.getCpuUsage(), cpuMetadata);
+    public SystemMetadata selectSystemMetadataById(Long id) {
+        if (id == null) {
+            throw new IllegalArgumentException("查询ID不能为空");
         }
-
-        if (memMetadata != null) {
-            checkAndCreateWarning(realTimeData.getId(), "内存过高",
-                    realTimeData.getMemUsage(), memMetadata);
-        }
-
-        if (diskMetadata != null) {
-            checkAndCreateWarning(realTimeData.getId(), "磁盘过高",
-                    realTimeData.getDiskUsage(), diskMetadata);
-        }
-    }
-
-    /**
-     * 检查资源使用率并创建预警记录
-     */
-    private void checkAndCreateWarning(Long dataId, String warningType,
-                                       BigDecimal usage, SystemMetadata metadata) {
-        if (usage == null) {
-            return;
-        }
-
-        try {
-            // 解析三级预警阈值
-            BigDecimal level1 = new BigDecimal(metadata.getWarningLevel1Value());  // 60
-            BigDecimal level2 = new BigDecimal(metadata.getWarningLevel2Value());  // 80
-            BigDecimal level3 = new BigDecimal(metadata.getWarningLevel3Value());  // 90
-
-            // 判断预警级别
-            if (usage.compareTo(level3) >= 0) {
-                createWarningRecord(dataId, warningType, "严重预警");
-            } else if (usage.compareTo(level2) >= 0) {
-                createWarningRecord(dataId, warningType, "中级预警");
-            } else if (usage.compareTo(level1) >= 0) {
-                createWarningRecord(dataId, warningType, "基础预警");
-            }
-        } catch (NumberFormatException e) {
-            // 处理阈值格式错误的情况
-            return;
-        }
-    }
-
-    /**
-     * 创建预警记录
-     */
-    private void createWarningRecord(Long dataId, String warningType, String warningLevel) {
-        AnalysisResult warning = new AnalysisResult();
-        warning.setDataId(dataId);
-        warning.setWarningType(warningType);
-        warning.setWarningLevel(warningLevel);
-        warning.setIsHandled(0);
-        this.insertAnalysisResult(warning);
-    }
-
-    @Override
-    public int insertAnalysisResult(AnalysisResult analysisResult) {
-        analysisResult.setAnalysisTime(DateUtils.getNowDate());
-        return analysisResultMapper.insertAnalysisResult(analysisResult);
-    }
-
-    /**
-     * 查询系统元数据
-     *
-     * @param id 系统元数据主键
-     * @return 系统元数据
-     */
-    @Override
-    public SystemMetadata selectSystemMetadataById(Long id)
-    {
         return systemMetadataMapper.selectSystemMetadataById(id);
     }
 
-    /**
-     * 查询系统元数据列表
-     *
-     * @param systemMetadata 系统元数据
-     * @return 系统元数据
-     */
     @Override
-    public List<SystemMetadata> selectSystemMetadataList(SystemMetadata systemMetadata)
-    {
+    public List<SystemMetadata> selectSystemMetadataList(SystemMetadata systemMetadata) {
         return systemMetadataMapper.selectSystemMetadataList(systemMetadata);
     }
 
-    /**
-     * 新增系统元数据
-     *
-     * @param systemMetadata 系统元数据
-     * @return 结果
-     */
     @Override
-    public int insertSystemMetadata(SystemMetadata systemMetadata)
-    {
+    public int insertSystemMetadata(SystemMetadata systemMetadata) {
+        // 校验核心字段（模块名+配置键唯一）
+        if (systemMetadata.getModuleName() == null || systemMetadata.getModuleName().isEmpty()) {
+            throw new IllegalArgumentException("模块名（moduleName）不能为空");
+        }
+        if (systemMetadata.getConfigKey() == null || systemMetadata.getConfigKey().isEmpty()) {
+            throw new IllegalArgumentException("配置键（configKey）不能为空");
+        }
+        // 校验是否已存在相同模块+配置键的记录
+        SystemMetadata exist = selectByModuleAndKey(systemMetadata.getModuleName(), systemMetadata.getConfigKey());
+        if (exist != null) {
+            throw new IllegalArgumentException("已存在模块[" + systemMetadata.getModuleName() + "]-配置键[" + systemMetadata.getConfigKey() + "]的记录");
+        }
+        // 设置默认更新时间
+        if (systemMetadata.getUpdateTime() == null) {
+            systemMetadata.setUpdateTime(DateUtils.getNowDate());
+        }
         return systemMetadataMapper.insertSystemMetadata(systemMetadata);
     }
 
-    /**
-     * 修改系统元数据
-     *
-     * @param systemMetadata 系统元数据
-     * @return 结果
-     */
     @Override
-    public int updateSystemMetadata(SystemMetadata systemMetadata)
-    {
+    public int updateSystemMetadata(SystemMetadata systemMetadata) {
+        if (systemMetadata.getId() == null) {
+            throw new IllegalArgumentException("修改ID不能为空");
+        }
+        // 强制更新时间为当前时间
         systemMetadata.setUpdateTime(DateUtils.getNowDate());
         return systemMetadataMapper.updateSystemMetadata(systemMetadata);
     }
 
-    /**
-     * 批量删除系统元数据
-     *
-     * @param ids 需要删除的系统元数据主键
-     * @return 结果
-     */
     @Override
-    public int deleteSystemMetadataByIds(Long[] ids)
-    {
+    public int deleteSystemMetadataByIds(Long[] ids) {
+        if (ids == null || ids.length == 0) {
+            throw new IllegalArgumentException("删除ID列表不能为空");
+        }
         return systemMetadataMapper.deleteSystemMetadataByIds(ids);
     }
 
+    @Override
+    public int deleteSystemMetadataById(Long id) {
+        if (id == null) {
+            throw new IllegalArgumentException("删除ID不能为空");
+        }
+        return systemMetadataMapper.deleteSystemMetadataById(id);
+    }
+
     /**
-     * 删除系统元数据信息
-     *
-     * @param id 系统元数据主键
-     * @return 结果
+     * 根据模块名+配置键查询元数据（给其他服务调用，如后续预警阈值从元数据读取）
      */
     @Override
-    public int deleteSystemMetadataById(Long id)
-    {
-        return systemMetadataMapper.deleteSystemMetadataById(id);
+    public SystemMetadata selectByModuleAndKey(String moduleName, String configKey) {
+        if (moduleName == null || moduleName.isEmpty() || configKey == null || configKey.isEmpty()) {
+            throw new IllegalArgumentException("模块名和配置键不能为空");
+        }
+        return systemMetadataMapper.selectByModuleAndKey(moduleName, configKey);
     }
 }

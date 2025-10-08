@@ -3,61 +3,63 @@ package com.ruoyi.kms.service;
 import java.util.List;
 import com.ruoyi.kms.domain.AnalysisResult;
 import com.ruoyi.kms.domain.RealTimeData;
+
 /**
- * 预警结果，关联实时数据，主删除从同步删除Service接口
- * 
+ * 预警结果Service接口
+ *
  * @author hby
  * @date 2025-09-27
  */
-public interface IAnalysisResultService 
+public interface IAnalysisResultService
 {
     /**
-     * 查询预警结果，关联实时数据，主删除从同步删除
-     * 
-     * @param id 预警结果，关联实时数据，主删除从同步删除主键
-     * @return 预警结果，关联实时数据，主删除从同步删除
+     * 查询预警结果
+     *
+     * @param id 预警结果主键
+     * @return 预警结果
      */
     public AnalysisResult selectAnalysisResultById(Long id);
 
     /**
-     * 查询预警结果，关联实时数据，主删除从同步删除列表
-     * 
-     * @param analysisResult 预警结果，关联实时数据，主删除从同步删除
-     * @return 预警结果，关联实时数据，主删除从同步删除集合
+     * 查询预警结果列表
+     *
+     * @param analysisResult 预警结果
+     * @return 预警结果集合
      */
     public List<AnalysisResult> selectAnalysisResultList(AnalysisResult analysisResult);
 
     /**
-     * 新增预警结果，关联实时数据，主删除从同步删除
-     * 
-     * @param analysisResult 预警结果，关联实时数据，主删除从同步删除
+     * 新增预警结果
+     *
+     * @param analysisResult 预警结果
      * @return 结果
      */
     public int insertAnalysisResult(AnalysisResult analysisResult);
 
     /**
-     * 修改预警结果，关联实时数据，主删除从同步删除
-     * 
-     * @param analysisResult 预警结果，关联实时数据，主删除从同步删除
+     * 修改预警结果
+     *
+     * @param analysisResult 预警结果
      * @return 结果
      */
     public int updateAnalysisResult(AnalysisResult analysisResult);
 
     /**
-     * 批量删除预警结果，关联实时数据，主删除从同步删除
-     * 
-     * @param ids 需要删除的预警结果，关联实时数据，主删除从同步删除主键集合
+     * 批量删除预警结果
+     *
+     * @param ids 需要删除的预警结果主键集合
      * @return 结果
      */
     public int deleteAnalysisResultByIds(Long[] ids);
 
     /**
-     * 删除预警结果，关联实时数据，主删除从同步删除信息
-     * 
-     * @param id 预警结果，关联实时数据，主删除从同步删除主键
+     * 删除预警结果信息
+     *
+     * @param id 预警结果主键
      * @return 结果
      */
     public int deleteAnalysisResultById(Long id);
+
     /**
      * 根据新采集的数据生成预警
      * @param realTimeData 最新的实时数据
