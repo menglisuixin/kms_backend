@@ -135,7 +135,7 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     }
 
     /**
-     * 采集CPU信息（兼容旧版Oshi API，手动处理多核逻辑）
+     * 采集CPU信息（修复版：完整Tick状态+无多核错误+数值兜底）
      */
     private KmsCpu collectCpu() throws InterruptedException {
         CentralProcessor processor = HARDWARE.getProcessor();
@@ -143,42 +143,49 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
         int cpuCoreNum = processor.getLogicalProcessorCount();
         cpu.setCpuNum(cpuCoreNum);
 
-        // 1. 获取CPU Tick快照
+        // 1. 获取两次Tick快照（间隔1秒，确保计算1秒内的变化）
         long[] prevTicks = processor.getSystemCpuLoadTicks();
         TimeUnit.SECONDS.sleep(1);
         long[] currTicks = processor.getSystemCpuLoadTicks();
 
-        // 2. 计算各状态Tick差值
+        // 2. 计算所有CPU状态的Tick差值（补充NICE/IRQ/SOFTIRQ，确保总时间完整）
+        long idleTick = currTicks[CentralProcessor.TickType.IDLE.ordinal()] - prevTicks[CentralProcessor.TickType.IDLE.ordinal()];
         long userTick = currTicks[CentralProcessor.TickType.USER.ordinal()] - prevTicks[CentralProcessor.TickType.USER.ordinal()];
         long sysTick = currTicks[CentralProcessor.TickType.SYSTEM.ordinal()] - prevTicks[CentralProcessor.TickType.SYSTEM.ordinal()];
-        long waitTick = currTicks[CentralProcessor.TickType.IOWAIT.ordinal()] - prevTicks[CentralProcessor.TickType.IOWAIT.ordinal()];
-        long idleTick = currTicks[CentralProcessor.TickType.IDLE.ordinal()] - prevTicks[CentralProcessor.TickType.IDLE.ordinal()];
+        long ioWaitTick = currTicks[CentralProcessor.TickType.IOWAIT.ordinal()] - prevTicks[CentralProcessor.TickType.IOWAIT.ordinal()];
+        // 补充遗漏的状态
+        long niceTick = currTicks[CentralProcessor.TickType.NICE.ordinal()] - prevTicks[CentralProcessor.TickType.NICE.ordinal()]; // 低优先级用户态
+        long irqTick = currTicks[CentralProcessor.TickType.IRQ.ordinal()] - prevTicks[CentralProcessor.TickType.IRQ.ordinal()]; // 硬中断
+        long softIrqTick = currTicks[CentralProcessor.TickType.SOFTIRQ.ordinal()] - prevTicks[CentralProcessor.TickType.SOFTIRQ.ordinal()]; // 软中断
 
-        long totalTick = userTick + sysTick + waitTick + idleTick;
-        totalTick = totalTick == 0 ? 1 : totalTick;
+        // 3. 计算总Tick差值（包含所有状态，确保总时间完整）
+        long totalTick = idleTick + userTick + sysTick + ioWaitTick + niceTick + irqTick + softIrqTick;
+        totalTick = totalTick == 0 ? 1 : totalTick; // 避免除零
 
-        // 3. 计算总使用率（未归一化）
-        long totalUsedTick = totalTick - idleTick;
-        double totalUsageRaw = (double) totalUsedTick / totalTick;
+        // 4. 计算核心指标（基于完整的总时间）
+        double idleUsage = (double) idleTick / totalTick ; // 空闲率
+        double totalUsage = (double) (totalTick - idleTick) / totalTick; // 总使用率（非空闲占比）
+        // 用户使用率：包含普通用户态（USER）和低优先级用户态（NICE）
+        double userUsage = (double) (userTick + niceTick) / totalTick;
+        // 系统使用率：包含系统态（SYSTEM）、硬中断（IRQ）、软中断（SOFTIRQ）
+        double sysUsage = (double) (sysTick + irqTick + softIrqTick) / totalTick;
 
-        // 4. 【关键修复】将总使用率除以核心数，进行归一化
-        double totalUsageNormalized = totalUsageRaw / cpuCoreNum;
+        // 5. 数值兜底：强制限制在0-100%（避免极端计算误差）
+        idleUsage = Math.max(0.0, Math.min(100.0, idleUsage));
+        totalUsage = Math.max(0.0, Math.min(100.0, totalUsage));
+        userUsage = Math.max(0.0, Math.min(100.0, userUsage));
+        sysUsage = Math.max(0.0, Math.min(100.0, sysUsage));
 
-        // 5. 计算细分使用率（基于总时间）
-        double userUsage = (double) userTick / totalTick;
-        double sysUsage = (double) sysTick / totalTick;
-        double idleUsage = (double) idleTick / totalTick;
+        // 6. 赋值到KmsCpu
+        cpu.setFree(idleUsage);
+        cpu.setTotal(totalUsage);
+        cpu.setUsed(userUsage);
+        cpu.setSys(sysUsage);
 
-        // 6. 【关键修复】同样对细分使用率进行归一化
-        userUsage = userUsage / cpuCoreNum;
-        sysUsage = sysUsage / cpuCoreNum;
-        idleUsage = idleUsage / cpuCoreNum;
-
-        // 7. 转换为百分比（0-100%）并赋值
-        cpu.setTotal(totalUsageNormalized * 100);
-        cpu.setUsed(userUsage * 100);
-        cpu.setSys(sysUsage * 100);
-        cpu.setFree(idleUsage * 100);
+        // 日志验证（可选，便于调试）
+        log.debug("CPU采集结果：核心数={}，总使用率={}%，用户使用率={}%，系统使用率={}%，空闲率={}%",
+                cpuCoreNum, Arith.round(totalUsage, 2), Arith.round(userUsage, 2),
+                Arith.round(sysUsage, 2), Arith.round(idleUsage, 2));
 
         return cpu;
     }
