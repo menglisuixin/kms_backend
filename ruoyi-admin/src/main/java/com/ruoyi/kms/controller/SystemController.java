@@ -43,114 +43,174 @@ public class SystemController extends BaseController {
 //        return success(list);
 //    }
 
+//    // 获取阈值配置（返回区间格式）
+//    @PreAuthorize("@ss.hasPermi('kms:system:view')")
+//    @GetMapping("/config")
+//    public AjaxResult getSystemConfig() {
+//        // 1. 查询分析器模块的所有阈值配置
+//        SystemMetadata metadata = new SystemMetadata();
+//        metadata.setModuleName("analyzer");
+//        List<SystemMetadata> originalList = metadataService.selectSystemMetadataList(metadata);
+//
+//        // 2. 将原始配置转换为Map便于查找
+//        Map<String, String> configMap = new HashMap<>();
+//        for (SystemMetadata item : originalList) {
+//            configMap.put(item.getConfigKey(), item.getConfigValue());
+//        }
+//
+//        // 3. 定义四个预警区间（与AnalysisResultServiceImpl中的阈值对应）
+//        List<Map<String, Object>> thresholdRanges = new ArrayList<>();
+//
+//        // 添加CPU阈值区间
+//        thresholdRanges.add(createRangeMap(
+//                "CPU使用率",
+//                "0-60",
+//                "无预警",
+//                configMap.get("cpuThresholdLevel1") // 60
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "CPU使用率",
+//                "60-80",
+//                "基础预警",
+//                configMap.get("cpuThresholdLevel2") // 80
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "CPU使用率",
+//                "80-90",
+//                "中级预警",
+//                configMap.get("cpuThresholdLevel3") // 90
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "CPU使用率",
+//                "90-100",
+//                "严重预警",
+//                "100"
+//        ));
+//
+//        // 添加内存阈值区间
+//        thresholdRanges.add(createRangeMap(
+//                "内存使用率",
+//                "0-60",
+//                "无预警",
+//                configMap.get("memThresholdLevel1") // 60
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "内存使用率",
+//                "60-80",
+//                "基础预警",
+//                configMap.get("memThresholdLevel2") // 80
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "内存使用率",
+//                "80-90",
+//                "中级预警",
+//                configMap.get("memThresholdLevel3") // 90
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "内存使用率",
+//                "90-100",
+//                "严重预警",
+//                "100"
+//        ));
+//
+//        // 添加磁盘阈值区间
+//        thresholdRanges.add(createRangeMap(
+//                "磁盘使用率",
+//                "0-60",
+//                "无预警",
+//                configMap.get("diskThresholdLevel1") // 60
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "磁盘使用率",
+//                "60-80",
+//                "基础预警",
+//                configMap.get("diskThresholdLevel2") // 80
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "磁盘使用率",
+//                "80-90",
+//                "中级预警",
+//                configMap.get("diskThresholdLevel3") // 90
+//        ));
+//        thresholdRanges.add(createRangeMap(
+//                "磁盘使用率",
+//                "90-100",
+//                "严重预警",
+//                "100"
+//        ));
+//
+//        return success(thresholdRanges);
+//    }
+
     // 获取阈值配置（返回区间格式）
     @PreAuthorize("@ss.hasPermi('kms:system:view')")
     @GetMapping("/config")
     public AjaxResult getSystemConfig() {
-        // 1. 查询分析器模块的所有阈值配置
-        SystemMetadata metadata = new SystemMetadata();
-        metadata.setModuleName("analyzer");
-        List<SystemMetadata> originalList = metadataService.selectSystemMetadataList(metadata);
+        // 查询分析器模块的所有阈值配置
+        SystemMetadata query = new SystemMetadata();
+        query.setModuleName("analyzer");
+        List<SystemMetadata> metadataList = metadataService.selectSystemMetadataList(query);
 
-        // 2. 将原始配置转换为Map便于查找
-        Map<String, String> configMap = new HashMap<>();
-        for (SystemMetadata item : originalList) {
-            configMap.put(item.getConfigKey(), item.getConfigValue());
-        }
-
-        // 3. 定义四个预警区间（与AnalysisResultServiceImpl中的阈值对应）
         List<Map<String, Object>> thresholdRanges = new ArrayList<>();
 
-        // 添加CPU阈值区间
-        thresholdRanges.add(createRangeMap(
-                "CPU使用率",
-                "0-60",
-                "无预警",
-                configMap.get("cpuThresholdLevel1") // 60
-        ));
-        thresholdRanges.add(createRangeMap(
-                "CPU使用率",
-                "60-80",
-                "基础预警",
-                configMap.get("cpuThresholdLevel2") // 80
-        ));
-        thresholdRanges.add(createRangeMap(
-                "CPU使用率",
-                "80-90",
-                "中级预警",
-                configMap.get("cpuThresholdLevel3") // 90
-        ));
-        thresholdRanges.add(createRangeMap(
-                "CPU使用率",
-                "90-100",
-                "严重预警",
-                "100"
-        ));
+        // 处理每个资源的阈值区间
+        for (SystemMetadata metadata : metadataList) {
+            String resourceName = getResourceName(metadata.getConfigKey());
+            if (resourceName == null) {
+                continue;
+            }
 
-        // 添加内存阈值区间
-        thresholdRanges.add(createRangeMap(
-                "内存使用率",
-                "0-60",
-                "无预警",
-                configMap.get("memThresholdLevel1") // 60
-        ));
-        thresholdRanges.add(createRangeMap(
-                "内存使用率",
-                "60-80",
-                "基础预警",
-                configMap.get("memThresholdLevel2") // 80
-        ));
-        thresholdRanges.add(createRangeMap(
-                "内存使用率",
-                "80-90",
-                "中级预警",
-                configMap.get("memThresholdLevel3") // 90
-        ));
-        thresholdRanges.add(createRangeMap(
-                "内存使用率",
-                "90-100",
-                "严重预警",
-                "100"
-        ));
-
-        // 添加磁盘阈值区间
-        thresholdRanges.add(createRangeMap(
-                "磁盘使用率",
-                "0-60",
-                "无预警",
-                configMap.get("diskThresholdLevel1") // 60
-        ));
-        thresholdRanges.add(createRangeMap(
-                "磁盘使用率",
-                "60-80",
-                "基础预警",
-                configMap.get("diskThresholdLevel2") // 80
-        ));
-        thresholdRanges.add(createRangeMap(
-                "磁盘使用率",
-                "80-90",
-                "中级预警",
-                configMap.get("diskThresholdLevel3") // 90
-        ));
-        thresholdRanges.add(createRangeMap(
-                "磁盘使用率",
-                "90-100",
-                "严重预警",
-                "100"
-        ));
+            // 添加四个区间
+            thresholdRanges.add(createRangeMap(
+                    resourceName,
+                    "0-" + metadata.getWarningLevel1Value(),
+                    "无预警",
+                    metadata.getWarningLevel1Value()
+            ));
+            thresholdRanges.add(createRangeMap(
+                    resourceName,
+                    metadata.getWarningLevel1Value() + "-" + metadata.getWarningLevel2Value(),
+                    "基础预警",
+                    metadata.getWarningLevel2Value()
+            ));
+            thresholdRanges.add(createRangeMap(
+                    resourceName,
+                    metadata.getWarningLevel2Value() + "-" + metadata.getWarningLevel3Value(),
+                    "中级预警",
+                    metadata.getWarningLevel3Value()
+            ));
+            thresholdRanges.add(createRangeMap(
+                    resourceName,
+                    metadata.getWarningLevel3Value() + "-100",
+                    "严重预警",
+                    "100"
+            ));
+        }
 
         return success(thresholdRanges);
     }
 
     /**
-     * 辅助方法：创建区间信息Map
+     * 将配置键转换为资源名称
+     */
+    private String getResourceName(String configKey) {
+        switch (configKey) {
+            case "cpuUsage": return "CPU使用率";
+            case "memUsage": return "内存使用率";
+            case "diskUsage": return "磁盘使用率";
+            default: return null;
+        }
+    }
+
+    /**
+     * 创建区间信息Map
      */
     private Map<String, Object> createRangeMap(String resource, String range, String warningLevel, String threshold) {
         Map<String, Object> rangeMap = new HashMap<>();
-        rangeMap.put("resource", resource);    // 资源类型
-        rangeMap.put("range", range);          // 区间范围
-        rangeMap.put("warningLevel", warningLevel);  // 预警级别
-        rangeMap.put("threshold", threshold);  // 阈值数值
+        rangeMap.put("resource", resource);
+        rangeMap.put("range", range);
+        rangeMap.put("warningLevel", warningLevel);
+        rangeMap.put("threshold", threshold);
         return rangeMap;
     }
 }

@@ -26,11 +26,43 @@ public class SystemMetadata extends BaseEntity
     @Excel(name = "配置项键名")
     private String configKey;
 
-    /** 配置项值 */
-    @Excel(name = "配置项值")
-    private String configValue;
+    /** 一级预警阈值 */
+    @Excel(name = "一级预警阈值")
+    private String warningLevel1Value;
 
-    public void setId(Long id) 
+    /** 二级预警阈值 */
+    @Excel(name = "二级预警阈值")
+    private String warningLevel2Value;
+
+    /** 三级预警阈值 */
+    @Excel(name = "三级预警阈值")
+    private String warningLevel3Value;
+
+    public String getWarningLevel1Value() {
+        return warningLevel1Value;
+    }
+
+    public void setWarningLevel1Value(String warningLevel1Value) {
+        this.warningLevel1Value = warningLevel1Value;
+    }
+
+    public String getWarningLevel2Value() {
+        return warningLevel2Value;
+    }
+
+    public void setWarningLevel2Value(String warningLevel2Value) {
+        this.warningLevel2Value = warningLevel2Value;
+    }
+
+    public String getWarningLevel3Value() {
+        return warningLevel3Value;
+    }
+
+    public void setWarningLevel3Value(String warningLevel3Value) {
+        this.warningLevel3Value = warningLevel3Value;
+    }
+
+    public void setId(Long id)
     {
         this.id = id;
     }
@@ -60,25 +92,17 @@ public class SystemMetadata extends BaseEntity
         return configKey;
     }
 
-    public void setConfigValue(String configValue) 
-    {
-        this.configValue = configValue;
-    }
-
-    public String getConfigValue() 
-    {
-        return configValue;
-    }
-
     @Override
     public String toString() {
         return new ToStringBuilder(this,ToStringStyle.MULTI_LINE_STYLE)
-            .append("id", getId())
-            .append("moduleName", getModuleName())
-            .append("configKey", getConfigKey())
-            .append("configValue", getConfigValue())
-            .append("updateTime", getUpdateTime())
-            .append("remark", getRemark())
-            .toString();
+                .append("id", getId())
+                .append("moduleName", getModuleName())
+                .append("configKey", getConfigKey())
+                .append("warningLevel1Value", getWarningLevel1Value())
+                .append("warningLevel2Value", getWarningLevel2Value())
+                .append("warningLevel3Value", getWarningLevel3Value())
+                .append("updateTime", getUpdateTime())
+                .append("remark", getRemark())
+                .toString();
     }
 }

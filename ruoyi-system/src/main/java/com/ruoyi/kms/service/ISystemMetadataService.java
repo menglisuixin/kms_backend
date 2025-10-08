@@ -1,6 +1,9 @@
 package com.ruoyi.kms.service;
 
 import java.util.List;
+
+import com.ruoyi.kms.domain.AnalysisResult;
+import com.ruoyi.kms.domain.RealTimeData;
 import com.ruoyi.kms.domain.SystemMetadata;
 
 /**
@@ -11,6 +14,10 @@ import com.ruoyi.kms.domain.SystemMetadata;
  */
 public interface ISystemMetadataService 
 {
+    void generateWarning(RealTimeData realTimeData);
+
+    int insertAnalysisResult(AnalysisResult analysisResult);
+
     /**
      * 查询系统元数据
      * 
