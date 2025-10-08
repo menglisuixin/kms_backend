@@ -9,53 +9,34 @@ import com.ruoyi.common.utils.Arith;
  */
 public class KmsMem
 {
-    /**
-     * 内存总量
-     */
-    private double total;
+    /** 内存总量（字节） */
+    private long total;
+    /** 内存已用（字节） */
+    private long used;
+    /** 内存可用（字节） */
+    private long free;
 
-    /**
-     * 已用内存
-     */
-    private double used;
-
-    /**
-     * 剩余内存
-     */
-    private double free;
-
-    public double getTotal()
-    {
-        return Arith.div(total, (1024 * 1024 * 1024), 2);
+    public long getTotal() {
+        return total;
     }
 
-    public void setTotal(long total)
-    {
+    public void setTotal(long total) {
         this.total = total;
     }
 
-    public double getUsed()
-    {
-        return Arith.div(used, (1024 * 1024 * 1024), 2);
+    public long getUsed() {
+        return used;
     }
 
-    public void setUsed(long used)
-    {
+    public void setUsed(long used) {
         this.used = used;
     }
 
-    public double getFree()
-    {
-        return Arith.div(free, (1024 * 1024 * 1024), 2);
+    public long getFree() {
+        return free;
     }
 
-    public void setFree(long free)
-    {
+    public void setFree(long free) {
         this.free = free;
-    }
-
-    public double getUsage()
-    {
-        return Arith.mul(Arith.div(used, total, 4), 100);
     }
 }

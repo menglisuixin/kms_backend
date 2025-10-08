@@ -96,38 +96,38 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     private RealTimeData buildRealTimeData(KmsCpu cpu, KmsMem mem, KmsSysFile disk, Date collectTime) throws JsonProcessingException {
         RealTimeData data = new RealTimeData();
 
-        // 1. 封装CPU数据
-        data.setCpuUsage(BigDecimal.valueOf(Arith.round(cpu.getTotal() * 100, 2))); // 转为百分比（原0-1→0-100）
-        data.setCpuUserUsage(BigDecimal.valueOf(Arith.round(cpu.getUsed() * 100, 2)));
-        data.setCpuSysUsage(BigDecimal.valueOf(Arith.round(cpu.getSys() * 100, 2)));
-        data.setCpuIdleUsage(BigDecimal.valueOf(Arith.round(cpu.getFree() * 100, 2)));
+        // 1. 修复CPU数据：直接使用collectCpu()计算好的百分比（0-100）
+        data.setCpuUsage(BigDecimal.valueOf(Arith.round(cpu.getTotal(), 2)));       // 如40.5 → 40.5%
+        data.setCpuUserUsage(BigDecimal.valueOf(Arith.round(cpu.getUsed(), 2)));     // 如30.2 → 30.2%
+        data.setCpuSysUsage(BigDecimal.valueOf(Arith.round(cpu.getSys(), 2)));       // 如10.3 → 10.3%
+        data.setCpuIdleUsage(BigDecimal.valueOf(Arith.round(cpu.getFree(), 2)));     // 如60.0 → 60.0%
         data.setCpuCoreNum(cpu.getCpuNum());
 
-        // 2. 封装内存数据（转GB，保留2位小数）
+        // 2. 内存数据（逻辑不变，正常）
         double memTotalGb = Arith.div(mem.getTotal(), 1024 * 1024 * 1024, 2);
         double memUsedGb = Arith.div(mem.getUsed(), 1024 * 1024 * 1024, 2);
         double memFreeGb = Arith.div(mem.getFree(), 1024 * 1024 * 1024, 2);
-        double memUsage = Arith.mul(Arith.div(mem.getUsed(), mem.getTotal(), 4), 100); // 使用率百分比
+        double memUsage = Arith.mul(Arith.div(mem.getUsed(), mem.getTotal(), 4), 100); // 0-100%
 
         data.setMemTotal(BigDecimal.valueOf(memTotalGb));
         data.setMemUsed(BigDecimal.valueOf(memUsedGb));
         data.setMemFree(BigDecimal.valueOf(memFreeGb));
         data.setMemUsage(BigDecimal.valueOf(Arith.round(memUsage, 2)));
 
-        // 3. 封装磁盘数据（转为JSON字符串）
+        // 3. 磁盘数据（逻辑不变，正常）
         Map<String, Object> diskMap = new HashMap<>();
-        diskMap.put("path", disk.getDirName());       // 磁盘路径（如C:/）
-        diskMap.put("type", disk.getTypeName());      // 磁盘类型（如NTFS）
-        diskMap.put("total", Arith.round(Double.parseDouble(disk.getTotal().replace("GB", "")), 2)); // 总大小（GB）
-        diskMap.put("used", Arith.round(Double.parseDouble(disk.getUsed().replace("GB", "")), 2));   // 已用（GB）
-        diskMap.put("free", Arith.round(Double.parseDouble(disk.getFree().replace("GB", "")), 2));   // 剩余（GB）
-        diskMap.put("usage", Arith.round(disk.getUsage(), 2)); // 使用率（百分比）
+        diskMap.put("path", disk.getDirName());
+        diskMap.put("type", disk.getTypeName());
+        diskMap.put("total", Arith.round(Double.parseDouble(disk.getTotal().replace("GB", "")), 2));
+        diskMap.put("used", Arith.round(Double.parseDouble(disk.getUsed().replace("GB", "")), 2));
+        diskMap.put("free", Arith.round(Double.parseDouble(disk.getFree().replace("GB", "")), 2));
+        diskMap.put("usage", Arith.round(disk.getUsage(), 2));
 
         data.setDiskData(objectMapper.writeValueAsString(diskMap));
 
-        // 4. 基础字段
+        // 4. 基础字段（逻辑不变）
         data.setCollectTime(collectTime);
-        data.setIsValid(1); // 1=有效数据
+        data.setIsValid(1);
 
         return data;
     }
@@ -140,30 +140,35 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
         KmsCpu cpu = new KmsCpu();
         cpu.setCpuNum(processor.getLogicalProcessorCount());
 
-        // 采集CPU Tick快照（间隔1秒，确保使用率准确）
+        // 1. 获取CPU Tick快照（间隔1秒，确保准确性）
         long[] prevTicks = processor.getSystemCpuLoadTicks();
         TimeUnit.SECONDS.sleep(1);
         long[] currTicks = processor.getSystemCpuLoadTicks();
 
-        // 计算各状态Tick差值
+        // 2. 计算各状态Tick差值
         long userTick = currTicks[CentralProcessor.TickType.USER.ordinal()] - prevTicks[CentralProcessor.TickType.USER.ordinal()];
         long sysTick = currTicks[CentralProcessor.TickType.SYSTEM.ordinal()] - prevTicks[CentralProcessor.TickType.SYSTEM.ordinal()];
         long waitTick = currTicks[CentralProcessor.TickType.IOWAIT.ordinal()] - prevTicks[CentralProcessor.TickType.IOWAIT.ordinal()];
         long idleTick = currTicks[CentralProcessor.TickType.IDLE.ordinal()] - prevTicks[CentralProcessor.TickType.IDLE.ordinal()];
 
-        // 总使用Tick（非空闲）
-        long totalUsedTick = userTick + sysTick + waitTick;
-        totalUsedTick = totalUsedTick == 0 ? 1 : totalUsedTick; // 避免分母为0
-        // 总Tick（所有状态）
-        long totalTick = totalUsedTick + idleTick;
+        // 总Tick（所有状态总和，避免分母为0）
+        long totalTick = userTick + sysTick + waitTick + idleTick;
         totalTick = totalTick == 0 ? 1 : totalTick;
 
-        // 计算使用率（0-1，后续转百分比）
-        cpu.setTotal((double) totalUsedTick / totalTick);       // 总使用率
-        cpu.setUsed((double) userTick / totalUsedTick);         // 用户使用率（占总使用的比例）
-        cpu.setSys((double) sysTick / totalUsedTick);           // 系统使用率（占总使用的比例）
-        cpu.setWait((double) waitTick / totalUsedTick);         // 等待使用率（占总使用的比例）
-        cpu.setFree((double) idleTick / totalTick);             // 空闲率
+        // 总使用Tick（非空闲）
+        long totalUsedTick = totalTick - idleTick;
+
+        // 3. 直接计算百分比（0-100），避免后续二次放大
+        double totalUsage = (double) totalUsedTick / totalTick * 100; // 总使用率（0-100%）
+        double userUsage = totalUsedTick == 0 ? 0 : (double) userTick / totalUsedTick * 100; // 用户使用率（0-100%）
+        double sysUsage = totalUsedTick == 0 ? 0 : (double) sysTick / totalUsedTick * 100;   // 系统使用率（0-100%）
+        double idleUsage = (double) idleTick / totalTick * 100; // 空闲率（0-100%）
+
+        // 赋值（直接是百分比，后续无需再乘100）
+        cpu.setTotal(totalUsage);       // 如40.5 → 40.5%
+        cpu.setUsed(userUsage);         // 如30.2 → 30.2%
+        cpu.setSys(sysUsage);           // 如10.3 → 10.3%
+        cpu.setFree(idleUsage);         // 如60.0 → 60.0%
 
         return cpu;
     }
@@ -174,6 +179,7 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     private KmsMem collectMem() {
         GlobalMemory memory = HARDWARE.getMemory();
         KmsMem mem = new KmsMem();
+        // Oshi的getTotal()返回字节数，直接赋值（后续计算GB时转换）
         mem.setTotal(memory.getTotal());         // 总量（字节）
         mem.setUsed(memory.getTotal() - memory.getAvailable()); // 已用（字节）
         mem.setFree(memory.getAvailable());      // 可用（字节）
