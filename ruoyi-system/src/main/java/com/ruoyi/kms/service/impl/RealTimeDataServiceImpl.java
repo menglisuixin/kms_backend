@@ -2,14 +2,19 @@ package com.ruoyi.kms.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.kms.domain.AnalysisResult;
 import com.ruoyi.kms.domain.RealTimeData;
+import com.ruoyi.kms.mapper.AnalysisResultMapper;
 import com.ruoyi.kms.mapper.RealTimeDataMapper;
 import com.ruoyi.kms.service.IRealTimeDataService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.type.TypeReference;
+
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 关键指标实时数据Service（仅负责实时数据CRUD，无采集/预警逻辑）
@@ -25,6 +30,8 @@ public class RealTimeDataServiceImpl implements IRealTimeDataService {
     // JSON工具：用于校验磁盘数据格式
     @Autowired
     private ObjectMapper objectMapper;
+
+    private AnalysisResultMapper analysisResultMapper;
 
     @Override
     public RealTimeData selectRealTimeDataById(Long id) {
@@ -154,5 +161,41 @@ public class RealTimeDataServiceImpl implements IRealTimeDataService {
             // 捕获所有其他解析或处理异常
             throw new ServiceException("磁盘JSON格式或内容校验失败：" + e.getMessage());
         }
+    }
+
+    @Override
+    public List<Map<String, Object>> selectRealTimeDataWithWarning(RealTimeData realTimeData) {
+        List<RealTimeData> dataList = realTimeDataMapper.selectRealTimeDataList(realTimeData);
+
+        // 2. 转换为Map，并添加预警状态字段
+        return dataList.stream().map(data -> {
+            Map<String, Object> map = new HashMap<>();
+            // 2.1 复制实时数据的基础字段（id、CPU/内存/磁盘指标等）
+            map.put("id", data.getId());
+            map.put("cpuUsage", data.getCpuUsage());
+            map.put("cpuUserUsage", data.getCpuUserUsage());
+            map.put("memUsage", data.getMemUsage());
+            map.put("memTotal", data.getMemTotal());
+            map.put("diskData", data.getDiskData());
+            map.put("collectTime", data.getCollectTime());
+            map.put("isValid", data.getIsValid());
+
+            // 2.2 查询当前实时数据关联的预警记录
+            AnalysisResult query = new AnalysisResult();
+            query.setDataId(data.getId()); // 关联实时数据ID
+            List<AnalysisResult> warningList = analysisResultMapper.selectAnalysisResultList(query);
+
+            // 2.3 计算预警状态和数量
+            int warningCount = warningList.size();
+            // 预警状态：1=有未处理，2=已处理，0=无预警
+            int warningStatus = warningList.stream().anyMatch(w -> w.getIsHandled() == 0)
+                    ? 1 : (warningCount > 0 ? 2 : 0);
+
+            // 2.4 添加预警扩展字段
+            map.put("warningCount", warningCount);
+            map.put("warningStatus", warningStatus);
+
+            return map;
+        }).collect(Collectors.toList());
     }
 }
