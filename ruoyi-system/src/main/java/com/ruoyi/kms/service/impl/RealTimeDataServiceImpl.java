@@ -10,7 +10,9 @@ import com.ruoyi.kms.service.IRealTimeDataService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.type.TypeReference;
+import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +24,7 @@ import java.util.stream.Collectors;
  * @author hby
  * @date 2025-09-28
  */
+@Slf4j
 @Service
 public class RealTimeDataServiceImpl implements IRealTimeDataService {
     @Autowired
@@ -167,31 +170,45 @@ public class RealTimeDataServiceImpl implements IRealTimeDataService {
     public List<Map<String, Object>> selectRealTimeDataWithWarning(RealTimeData realTimeData) {
         List<RealTimeData> dataList = realTimeDataMapper.selectRealTimeDataList(realTimeData);
 
-        // 2. 转换为Map，并添加预警状态字段
+        // 处理 dataList 为 null 的情况（若Mapper返回null，避免后续流处理报错）
+        if (dataList == null) {
+            dataList = new ArrayList<>();
+        }
+
         return dataList.stream().map(data -> {
             Map<String, Object> map = new HashMap<>();
-            // 2.1 复制实时数据的基础字段（id、CPU/内存/磁盘指标等）
+            // 1. 先判断 data 是否为 null（避免 data.getId() 报错）
+            if (data == null) {
+                log.warn("实时数据列表中存在null元素，跳过处理");
+                return map;
+            }
+
+            // 2. 复制实时数据字段（正常逻辑）
             map.put("id", data.getId());
             map.put("cpuUsage", data.getCpuUsage());
-            map.put("cpuUserUsage", data.getCpuUserUsage());
             map.put("memUsage", data.getMemUsage());
-            map.put("memTotal", data.getMemTotal());
             map.put("diskData", data.getDiskData());
             map.put("collectTime", data.getCollectTime());
             map.put("isValid", data.getIsValid());
 
-            // 2.2 查询当前实时数据关联的预警记录
+            // 3. 查询预警记录：关键！判断返回结果是否为null，若为null则赋值为空列表
             AnalysisResult query = new AnalysisResult();
-            query.setDataId(data.getId()); // 关联实时数据ID
+            query.setDataId(data.getId());
             List<AnalysisResult> warningList = analysisResultMapper.selectAnalysisResultList(query);
+            // 核心修复：若 warningList 为 null，转为空列表
+            warningList = warningList == null ? new ArrayList<>() : warningList;
 
-            // 2.3 计算预警状态和数量
+            // 4. 计算预警状态和数量（此时 warningList 不可能为 null，可安全调用流方法）
             int warningCount = warningList.size();
-            // 预警状态：1=有未处理，2=已处理，0=无预警
-            int warningStatus = warningList.stream().anyMatch(w -> w.getIsHandled() == 0)
-                    ? 1 : (warningCount > 0 ? 2 : 0);
+            // 流处理前无需再判断，因 warningList 已确保非null
+            boolean hasUnhandled = warningList.stream()
+                    .anyMatch(w -> {
+                        // 额外判断：避免 w 为 null（若预警列表中存在null元素）
+                        return w != null && w.getIsHandled() == 0;
+                    });
+            int warningStatus = hasUnhandled ? 1 : (warningCount > 0 ? 2 : 0);
 
-            // 2.4 添加预警扩展字段
+            // 5. 添加预警字段
             map.put("warningCount", warningCount);
             map.put("warningStatus", warningStatus);
 
