@@ -26,6 +26,12 @@
             <groupId>com.github.oshi</groupId>
             <artifactId>oshi-core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.24</version> <!-- 版本号可根据实际情况调整 -->
+            <optional>true</optional>
+        </dependency>
 
     </dependencies>
 

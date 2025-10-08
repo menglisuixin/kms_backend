@@ -4,133 +4,147 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.kms.mapper.RealTimeDataMapper">
 
+    <!-- 结果映射：删除原磁盘字段，新增 diskData 映射 -->
     <resultMap type="RealTimeData" id="RealTimeDataResult">
         <result property="id"            column="id"                />
+        <!-- CPU 相关字段映射（保留不变） -->
         <result property="cpuUsage"      column="cpu_usage"          />
-        <!-- 新增CPU相关字段映射 -->
         <result property="cpuUserUsage"  column="cpu_user_usage"    />
         <result property="cpuSysUsage"   column="cpu_sys_usage"     />
         <result property="cpuIdleUsage"  column="cpu_idle_usage"    />
         <result property="cpuCoreNum"    column="cpu_core_num"      />
+        <!-- 内存 相关字段映射（保留不变） -->
         <result property="memUsage"      column="mem_usage"          />
-        <!-- 新增内存相关字段映射 -->
         <result property="memTotal"      column="mem_total"          />
         <result property="memUsed"       column="mem_used"           />
         <result property="memFree"       column="mem_free"           />
-        <result property="diskUsage"     column="disk_usage"         />
-        <!-- 新增磁盘相关字段映射 -->
-        <result property="diskPath"      column="disk_path"          />
-        <result property="diskType"      column="disk_type"          />
-        <result property="diskTotal"     column="disk_total"         />
-        <result property="diskUsed"      column="disk_used"          />
-        <result property="diskFree"      column="disk_free"          />
-        <!-- 原有字段保留 -->
+        <!-- 磁盘 相关字段：直接映射 JSON 字符串字段 -->
+        <result property="diskData"      column="disk_data"          />
+        <!-- 公共字段映射（保留不变） -->
         <result property="collectTime"   column="collect_time"       />
         <result property="isValid"       column="is_valid"           />
     </resultMap>
 
+    <!-- SQL片段：删除原磁盘字段，新增 disk_data -->
     <sql id="selectRealTimeDataVo">
         select
-            id, cpu_usage,
-            cpu_user_usage, cpu_sys_usage, cpu_idle_usage, cpu_core_num,  -- 新增CPU字段
-            mem_usage, mem_total, mem_used, mem_free,  -- 新增内存字段
-            disk_usage, disk_path, disk_type, disk_total, disk_used, disk_free,  -- 新增磁盘字段
+            id,
+            -- CPU 字段
+            cpu_usage, cpu_user_usage, cpu_sys_usage, cpu_idle_usage, cpu_core_num,
+            -- 内存 字段
+            mem_usage, mem_total, mem_used, mem_free,
+            -- 磁盘 JSON 字符串字段
+            disk_data,
+            -- 公共字段
             collect_time, is_valid
         from real_time_data
     </sql>
 
+    <!-- 修正后的查询列表 -->
     <select id="selectRealTimeDataList" parameterType="RealTimeData" resultMap="RealTimeDataResult">
         <include refid="selectRealTimeDataVo"/>
-        <where>  
+        <where>
             <if test="cpuUsage != null "> and cpu_usage = #{cpuUsage}</if>
             <if test="memUsage != null "> and mem_usage = #{memUsage}</if>
-            <if test="diskUsage != null "> and disk_usage = #{diskUsage}</if>
+            <!-- 修正：用 indexOf() 替代 contains()，并指定 jdbcType -->
+            <if test="diskData != null and diskData != '' and diskUsage != null">
+                and JSON_EXTRACT(disk_data, '$.usage') = #{diskUsage, jdbcType=DECIMAL}
+            </if>
+            <if test="diskData != null and diskData != '' and diskPath != null">
+                and JSON_EXTRACT(disk_data, '$.path') = #{diskPath, jdbcType=VARCHAR}
+            </if>
             <if test="collectTime != null "> and collect_time = #{collectTime}</if>
             <if test="isValid != null "> and is_valid = #{isValid}</if>
         </where>
     </select>
-    
+
+    <!-- 查询单条数据（无变化） -->
     <select id="selectRealTimeDataById" parameterType="Long" resultMap="RealTimeDataResult">
         <include refid="selectRealTimeDataVo"/>
         where id = #{id}
     </select>
 
+    <!-- 新增数据：替换原磁盘字段为 disk_data（直接插入字符串） -->
     <insert id="insertRealTimeData" parameterType="RealTimeData" useGeneratedKeys="true" keyProperty="id">
         insert into real_time_data
         <trim prefix="(" suffix=")" suffixOverrides=",">
+            <!-- CPU 字段（保留不变） -->
             <if test="cpuUsage != null">cpu_usage,</if>
-            <!-- 新增CPU字段插入 -->
             <if test="cpuUserUsage != null">cpu_user_usage,</if>
             <if test="cpuSysUsage != null">cpu_sys_usage,</if>
             <if test="cpuIdleUsage != null">cpu_idle_usage,</if>
             <if test="cpuCoreNum != null">cpu_core_num,</if>
+            <!-- 内存 字段（保留不变） -->
             <if test="memUsage != null">mem_usage,</if>
-            <!-- 新增内存字段插入 -->
             <if test="memTotal != null">mem_total,</if>
             <if test="memUsed != null">mem_used,</if>
             <if test="memFree != null">mem_free,</if>
-            <if test="diskUsage != null">disk_usage,</if>
-            <!-- 新增磁盘字段插入 -->
-            <if test="diskPath != null">disk_path,</if>
-            <if test="diskType != null">disk_type,</if>
-            <if test="diskTotal != null">disk_total,</if>
-            <if test="diskUsed != null">disk_used,</if>
-            <if test="diskFree != null">disk_free,</if>
-            <!-- 原有字段保留 -->
+            <!-- 磁盘 JSON 字段（必传，数据库非空） -->
+            <if test="diskData != null and diskData != ''">disk_data,</if>
+            <!-- 公共字段（保留不变） -->
             <if test="collectTime != null">collect_time,</if>
             <if test="isValid != null">is_valid,</if>
         </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <!-- CPU 字段值（保留不变） -->
             <if test="cpuUsage != null">#{cpuUsage},</if>
-            <!-- 新增CPU字段值 -->
             <if test="cpuUserUsage != null">#{cpuUserUsage},</if>
             <if test="cpuSysUsage != null">#{cpuSysUsage},</if>
             <if test="cpuIdleUsage != null">#{cpuIdleUsage},</if>
             <if test="cpuCoreNum != null">#{cpuCoreNum},</if>
+            <!-- 内存 字段值（保留不变） -->
             <if test="memUsage != null">#{memUsage},</if>
-            <!-- 新增内存字段值 -->
             <if test="memTotal != null">#{memTotal},</if>
             <if test="memUsed != null">#{memUsed},</if>
             <if test="memFree != null">#{memFree},</if>
-            <if test="diskUsage != null">#{diskUsage},</if>
-            <!-- 新增磁盘字段值 -->
-            <if test="diskPath != null">#{diskPath},</if>
-            <if test="diskType != null">#{diskType},</if>
-            <if test="diskTotal != null">#{diskTotal},</if>
-            <if test="diskUsed != null">#{diskUsed},</if>
-            <if test="diskFree != null">#{diskFree},</if>
-            <!-- 原有字段保留 -->
+            <!-- 磁盘 JSON 字段值（直接插入字符串） -->
+            <if test="diskData != null and diskData != ''">#{diskData},</if>
+            <!-- 公共字段值（保留不变） -->
             <if test="collectTime != null">#{collectTime},</if>
             <if test="isValid != null">#{isValid},</if>
         </trim>
     </insert>
 
+    <!-- 修改数据：适配 disk_data 字段 -->
     <update id="updateRealTimeData" parameterType="RealTimeData">
         update real_time_data
         <trim prefix="SET" suffixOverrides=",">
+            <!-- CPU 字段修改（保留不变） -->
             <if test="cpuUsage != null">cpu_usage = #{cpuUsage},</if>
+            <if test="cpuUserUsage != null">cpu_user_usage = #{cpuUserUsage},</if>
+            <if test="cpuSysUsage != null">cpu_sys_usage = #{cpuSysUsage},</if>
+            <if test="cpuIdleUsage != null">cpu_idle_usage = #{cpuIdleUsage},</if>
+            <if test="cpuCoreNum != null">cpu_core_num = #{cpuCoreNum},</if>
+            <!-- 内存 字段修改（保留不变） -->
             <if test="memUsage != null">mem_usage = #{memUsage},</if>
-            <if test="diskUsage != null">disk_usage = #{diskUsage},</if>
+            <if test="memTotal != null">mem_total = #{memTotal},</if>
+            <if test="memUsed != null">mem_used = #{memUsed},</if>
+            <if test="memFree != null">mem_free = #{memFree},</if>
+            <!-- 磁盘 JSON 字段修改 -->
+            <if test="diskData != null and diskData != ''">disk_data = #{diskData},</if>
+            <!-- 公共字段修改（保留不变） -->
             <if test="collectTime != null">collect_time = #{collectTime},</if>
             <if test="isValid != null">is_valid = #{isValid},</if>
         </trim>
         where id = #{id}
     </update>
 
+    <!-- 删除数据（无变化） -->
     <delete id="deleteRealTimeDataById" parameterType="Long">
         delete from real_time_data where id = #{id}
     </delete>
 
     <delete id="deleteRealTimeDataByIds" parameterType="String">
-        delete from real_time_data where id in 
+        delete from real_time_data where id in
         <foreach item="id" collection="array" open="(" separator="," close=")">
             #{id}
         </foreach>
     </delete>
+
+    <!-- 查询最新数据：补充 disk_data 字段 -->
     <select id="selectLatestData" resultMap="RealTimeDataResult">
-        select id, cpu_usage, mem_usage, disk_usage, collect_time, is_valid
-        from real_time_data
+        <include refid="selectRealTimeDataVo"/>
         order by collect_time desc
-            limit 1
+        limit 1
     </select>
 </mapper>
