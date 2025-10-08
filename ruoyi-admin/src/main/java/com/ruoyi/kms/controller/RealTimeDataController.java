@@ -36,22 +36,22 @@ public class RealTimeDataController extends BaseController
     /**
      * 查询关键指标实时数据列表
      */
-//    @PreAuthorize("@ss.hasPermi('kms:realTimeData:list')")
-//    @GetMapping("/list")
-//    public TableDataInfo list(RealTimeData realTimeData)
-//    {
-//        startPage();
-//        List<RealTimeData> list = realTimeDataService.selectRealTimeDataList(realTimeData);
-//        return getDataTable(list);
-//    }
     @PreAuthorize("@ss.hasPermi('kms:realTimeData:list')")
     @GetMapping("/list")
-    public TableDataInfo list(RealTimeData realTimeData) {
+    public TableDataInfo list(RealTimeData realTimeData)
+    {
         startPage();
-        // 调用新增的方法，返回带预警状态的Map列表
-        List<Map<String, Object>> list = realTimeDataService.selectRealTimeDataWithWarning(realTimeData);
+        List<RealTimeData> list = realTimeDataService.selectRealTimeDataList(realTimeData);
         return getDataTable(list);
     }
+//    @PreAuthorize("@ss.hasPermi('kms:realTimeData:list')")
+//    @GetMapping("/list")
+//    public TableDataInfo list(RealTimeData realTimeData) {
+//        startPage();
+//        // 调用新增的方法，返回带预警状态的Map列表
+//        List<Map<String, Object>> list = realTimeDataService.selectRealTimeDataWithWarning(realTimeData);
+//        return getDataTable(list);
+//    }
 
     /**
      * 导出关键指标实时数据列表

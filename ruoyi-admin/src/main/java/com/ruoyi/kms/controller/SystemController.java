@@ -195,9 +195,9 @@ public class SystemController extends BaseController {
      */
     private String getResourceName(String configKey) {
         switch (configKey) {
-            case "cpuUsage": return "CPU使用率";
-            case "memUsage": return "内存使用率";
-            case "diskUsage": return "磁盘使用率";
+            case "cpuThreshold": return "CPU使用率";
+            case "memThreshold": return "内存使用率";
+            case "diskThreshold": return "磁盘使用率";
             default: return null;
         }
     }
