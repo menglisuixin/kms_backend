@@ -3,18 +3,40 @@
 PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.kms.mapper.RealTimeDataMapper">
-    
+
     <resultMap type="RealTimeData" id="RealTimeDataResult">
-        <result property="id"    column="id"    />
-        <result property="cpuUsage"    column="cpu_usage"    />
-        <result property="memUsage"    column="mem_usage"    />
-        <result property="diskUsage"    column="disk_usage"    />
-        <result property="collectTime"    column="collect_time"    />
-        <result property="isValid"    column="is_valid"    />
+        <result property="id"            column="id"                />
+        <result property="cpuUsage"      column="cpu_usage"          />
+        <!-- 新增CPU相关字段映射 -->
+        <result property="cpuUserUsage"  column="cpu_user_usage"    />
+        <result property="cpuSysUsage"   column="cpu_sys_usage"     />
+        <result property="cpuIdleUsage"  column="cpu_idle_usage"    />
+        <result property="cpuCoreNum"    column="cpu_core_num"      />
+        <result property="memUsage"      column="mem_usage"          />
+        <!-- 新增内存相关字段映射 -->
+        <result property="memTotal"      column="mem_total"          />
+        <result property="memUsed"       column="mem_used"           />
+        <result property="memFree"       column="mem_free"           />
+        <result property="diskUsage"     column="disk_usage"         />
+        <!-- 新增磁盘相关字段映射 -->
+        <result property="diskPath"      column="disk_path"          />
+        <result property="diskType"      column="disk_type"          />
+        <result property="diskTotal"     column="disk_total"         />
+        <result property="diskUsed"      column="disk_used"          />
+        <result property="diskFree"      column="disk_free"          />
+        <!-- 原有字段保留 -->
+        <result property="collectTime"   column="collect_time"       />
+        <result property="isValid"       column="is_valid"           />
     </resultMap>
 
     <sql id="selectRealTimeDataVo">
-        select id, cpu_usage, mem_usage, disk_usage, collect_time, is_valid from real_time_data
+        select
+            id, cpu_usage,
+            cpu_user_usage, cpu_sys_usage, cpu_idle_usage, cpu_core_num,  -- 新增CPU字段
+            mem_usage, mem_total, mem_used, mem_free,  -- 新增内存字段
+            disk_usage, disk_path, disk_type, disk_total, disk_used, disk_free,  -- 新增磁盘字段
+            collect_time, is_valid
+        from real_time_data
     </sql>
 
     <select id="selectRealTimeDataList" parameterType="RealTimeData" resultMap="RealTimeDataResult">
@@ -37,18 +59,50 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         insert into real_time_data
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="cpuUsage != null">cpu_usage,</if>
+            <!-- 新增CPU字段插入 -->
+            <if test="cpuUserUsage != null">cpu_user_usage,</if>
+            <if test="cpuSysUsage != null">cpu_sys_usage,</if>
+            <if test="cpuIdleUsage != null">cpu_idle_usage,</if>
+            <if test="cpuCoreNum != null">cpu_core_num,</if>
             <if test="memUsage != null">mem_usage,</if>
+            <!-- 新增内存字段插入 -->
+            <if test="memTotal != null">mem_total,</if>
+            <if test="memUsed != null">mem_used,</if>
+            <if test="memFree != null">mem_free,</if>
             <if test="diskUsage != null">disk_usage,</if>
+            <!-- 新增磁盘字段插入 -->
+            <if test="diskPath != null">disk_path,</if>
+            <if test="diskType != null">disk_type,</if>
+            <if test="diskTotal != null">disk_total,</if>
+            <if test="diskUsed != null">disk_used,</if>
+            <if test="diskFree != null">disk_free,</if>
+            <!-- 原有字段保留 -->
             <if test="collectTime != null">collect_time,</if>
             <if test="isValid != null">is_valid,</if>
-         </trim>
+        </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
             <if test="cpuUsage != null">#{cpuUsage},</if>
+            <!-- 新增CPU字段值 -->
+            <if test="cpuUserUsage != null">#{cpuUserUsage},</if>
+            <if test="cpuSysUsage != null">#{cpuSysUsage},</if>
+            <if test="cpuIdleUsage != null">#{cpuIdleUsage},</if>
+            <if test="cpuCoreNum != null">#{cpuCoreNum},</if>
             <if test="memUsage != null">#{memUsage},</if>
+            <!-- 新增内存字段值 -->
+            <if test="memTotal != null">#{memTotal},</if>
+            <if test="memUsed != null">#{memUsed},</if>
+            <if test="memFree != null">#{memFree},</if>
             <if test="diskUsage != null">#{diskUsage},</if>
+            <!-- 新增磁盘字段值 -->
+            <if test="diskPath != null">#{diskPath},</if>
+            <if test="diskType != null">#{diskType},</if>
+            <if test="diskTotal != null">#{diskTotal},</if>
+            <if test="diskUsed != null">#{diskUsed},</if>
+            <if test="diskFree != null">#{diskFree},</if>
+            <!-- 原有字段保留 -->
             <if test="collectTime != null">#{collectTime},</if>
             <if test="isValid != null">#{isValid},</if>
-         </trim>
+        </trim>
     </insert>
 
     <update id="updateRealTimeData" parameterType="RealTimeData">
