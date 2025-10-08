@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import oshi.hardware.CentralProcessor.TickType;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -96,11 +97,27 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     private RealTimeData buildRealTimeData(KmsCpu cpu, KmsMem mem, KmsSysFile disk, Date collectTime) throws JsonProcessingException {
         RealTimeData data = new RealTimeData();
 
-        // 1. 修复CPU数据：直接使用collectCpu()计算好的百分比（0-100）
-        data.setCpuUsage(BigDecimal.valueOf(Arith.round(cpu.getTotal(), 2)));       // 如40.5 → 40.5%
-        data.setCpuUserUsage(BigDecimal.valueOf(Arith.round(cpu.getUsed(), 2)));     // 如30.2 → 30.2%
-        data.setCpuSysUsage(BigDecimal.valueOf(Arith.round(cpu.getSys(), 2)));       // 如10.3 → 10.3%
-        data.setCpuIdleUsage(BigDecimal.valueOf(Arith.round(cpu.getFree(), 2)));     // 如60.0 → 60.0%
+        // 1. CPU数据：添加数值封顶（最大100%，最小0%）
+        BigDecimal cpuTotal = BigDecimal.valueOf(Arith.round(cpu.getTotal(), 2));
+        BigDecimal cpuUser = BigDecimal.valueOf(Arith.round(cpu.getUsed(), 2));
+        BigDecimal cpuSys = BigDecimal.valueOf(Arith.round(cpu.getSys(), 2));
+        BigDecimal cpuIdle = BigDecimal.valueOf(Arith.round(cpu.getFree(), 2));
+
+        // 数值封顶：确保不超过100%，不低于0%
+        cpuTotal = cpuTotal.compareTo(BigDecimal.valueOf(100)) > 0 ? BigDecimal.valueOf(100) : cpuTotal;
+        cpuTotal = cpuTotal.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cpuTotal;
+        cpuUser = cpuUser.compareTo(BigDecimal.valueOf(100)) > 0 ? BigDecimal.valueOf(100) : cpuUser;
+        cpuUser = cpuUser.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cpuUser;
+        cpuSys = cpuSys.compareTo(BigDecimal.valueOf(100)) > 0 ? BigDecimal.valueOf(100) : cpuSys;
+        cpuSys = cpuSys.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cpuSys;
+        cpuIdle = cpuIdle.compareTo(BigDecimal.valueOf(100)) > 0 ? BigDecimal.valueOf(100) : cpuIdle;
+        cpuIdle = cpuIdle.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cpuIdle;
+
+        // 赋值到RealTimeData
+        data.setCpuUsage(cpuTotal);
+        data.setCpuUserUsage(cpuUser);
+        data.setCpuSysUsage(cpuSys);
+        data.setCpuIdleUsage(cpuIdle);
         data.setCpuCoreNum(cpu.getCpuNum());
 
         // 2. 内存数据（逻辑不变，正常）
@@ -133,42 +150,73 @@ public class KmsDataCollectionServiceImpl implements IKmsDataCollectionService {
     }
 
     /**
-     * 采集CPU信息（Oshi采集，返回使用率百分比）
+     * 采集CPU信息（改用Tick差值计算，无版本兼容问题）
      */
     private KmsCpu collectCpu() throws InterruptedException {
         CentralProcessor processor = HARDWARE.getProcessor();
         KmsCpu cpu = new KmsCpu();
+        // 设置CPU逻辑核心数
         cpu.setCpuNum(processor.getLogicalProcessorCount());
 
-        // 1. 获取CPU Tick快照（间隔1秒，确保准确性）
+        // 1. 第一次获取CPU Tick快照（累计值）
         long[] prevTicks = processor.getSystemCpuLoadTicks();
+        // 休眠1秒：确保两次快照有时间差，能计算出使用率变化
         TimeUnit.SECONDS.sleep(1);
+        // 2. 第二次获取CPU Tick快照（累计值）
         long[] currTicks = processor.getSystemCpuLoadTicks();
 
-        // 2. 计算各状态Tick差值
-        long userTick = currTicks[CentralProcessor.TickType.USER.ordinal()] - prevTicks[CentralProcessor.TickType.USER.ordinal()];
-        long sysTick = currTicks[CentralProcessor.TickType.SYSTEM.ordinal()] - prevTicks[CentralProcessor.TickType.SYSTEM.ordinal()];
-        long waitTick = currTicks[CentralProcessor.TickType.IOWAIT.ordinal()] - prevTicks[CentralProcessor.TickType.IOWAIT.ordinal()];
-        long idleTick = currTicks[CentralProcessor.TickType.IDLE.ordinal()] - prevTicks[CentralProcessor.TickType.IDLE.ordinal()];
+        // 3. 计算两次快照的Tick差值（核心：用差值避免多核心叠加问题）
+        long prevUser = prevTicks[TickType.USER.ordinal()];
+        long prevSys = prevTicks[TickType.SYSTEM.ordinal()];
+        long prevIdle = prevTicks[TickType.IDLE.ordinal()];
+        long prevIoWait = prevTicks[TickType.IOWAIT.ordinal()];
 
-        // 总Tick（所有状态总和，避免分母为0）
-        long totalTick = userTick + sysTick + waitTick + idleTick;
-        totalTick = totalTick == 0 ? 1 : totalTick;
+        long currUser = currTicks[TickType.USER.ordinal()];
+        long currSys = currTicks[TickType.SYSTEM.ordinal()];
+        long currIdle = currTicks[TickType.IDLE.ordinal()];
+        long currIoWait = currTicks[TickType.IOWAIT.ordinal()];
 
-        // 总使用Tick（非空闲）
-        long totalUsedTick = totalTick - idleTick;
+        // 差值 = 当前Tick - 之前Tick（得到1秒内的Tick变化量）
+        long diffUser = currUser - prevUser;
+        long diffSys = currSys - prevSys;
+        long diffIdle = currIdle - prevIdle;
+        long diffIoWait = currIoWait - prevIoWait;
 
-        // 3. 直接计算百分比（0-100），避免后续二次放大
-        double totalUsage = (double) totalUsedTick / totalTick * 100; // 总使用率（0-100%）
-        double userUsage = totalUsedTick == 0 ? 0 : (double) userTick / totalUsedTick * 100; // 用户使用率（0-100%）
-        double sysUsage = totalUsedTick == 0 ? 0 : (double) sysTick / totalUsedTick * 100;   // 系统使用率（0-100%）
-        double idleUsage = (double) idleTick / totalTick * 100; // 空闲率（0-100%）
+        // 4. 计算总Tick变化量和非空闲Tick变化量
+        long diffTotal = diffUser + diffSys + diffIdle + diffIoWait; // 总变化量（1秒内的总Tick）
+        long diffNonIdle = diffUser + diffSys + diffIoWait;         // 非空闲变化量（用户+系统+IO等待）
 
-        // 赋值（直接是百分比，后续无需再乘100）
-        cpu.setTotal(totalUsage);       // 如40.5 → 40.5%
-        cpu.setUsed(userUsage);         // 如30.2 → 30.2%
-        cpu.setSys(sysUsage);           // 如10.3 → 10.3%
-        cpu.setFree(idleUsage);         // 如60.0 → 60.0%
+        // 5. 计算CPU总使用率（非空闲占比）
+        double totalUsage = 0.0;
+        if (diffTotal > 0) { // 避免除零异常
+            totalUsage = (double) diffNonIdle / diffTotal * 100; // 转为百分比（0-100%）
+        }
+        cpu.setTotal(totalUsage);
+
+        // 6. 计算用户/系统/空闲使用率（基于差值占比）
+        double userUsage = 0.0;
+        double sysUsage = 0.0;
+        double idleUsage = 0.0;
+        if (diffNonIdle > 0) { // 非空闲Tick不为0时计算用户/系统占比
+            userUsage = (double) diffUser / diffNonIdle * 100;
+            sysUsage = (double) diffSys / diffNonIdle * 100;
+        }
+        if (diffTotal > 0) { // 总Tick不为0时计算空闲占比
+            idleUsage = (double) diffIdle / diffTotal * 100;
+        }
+
+        // 7. 确保数值在0-100%范围内（避免极端情况）
+        cpu.setUsed(Math.max(0.0, Math.min(100.0, userUsage)));
+        cpu.setSys(Math.max(0.0, Math.min(100.0, sysUsage)));
+        cpu.setFree(Math.max(0.0, Math.min(100.0, idleUsage)));
+
+        // 日志打印（验证数值是否正常）
+        log.debug("CPU采集结果：核心数={}, 总使用率={}%, 用户使用率={}%, 系统使用率={}%, 空闲率={}%",
+                cpu.getCpuNum(),
+                Arith.round(cpu.getTotal(), 2),
+                Arith.round(cpu.getUsed(), 2),
+                Arith.round(cpu.getSys(), 2),
+                Arith.round(cpu.getFree(), 2));
 
         return cpu;
     }
