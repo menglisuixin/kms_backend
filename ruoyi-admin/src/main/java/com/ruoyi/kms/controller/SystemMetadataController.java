@@ -2,6 +2,8 @@ package com.ruoyi.kms.controller;
 
 import java.util.List;
 import javax.servlet.http.HttpServletResponse;
+
+import com.ruoyi.common.utils.DateUtils;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,28 +71,90 @@ public class SystemMetadataController extends BaseController
         return success(systemMetadataService.selectSystemMetadataById(id));
     }
 
+//    /**
+//     * 新增系统元数据
+//     */
+//    @PreAuthorize("@ss.hasPermi('kms:systemMetadata:add')")
+//    @Log(title = "系统元数据", businessType = BusinessType.INSERT)
+//    @PostMapping
+//    public AjaxResult add(@RequestBody SystemMetadata systemMetadata)
+//    {
+//        return toAjax(systemMetadataService.insertSystemMetadata(systemMetadata));
+//    }
+//
+//    /**
+//     * 修改系统元数据
+//     */
+//    @PreAuthorize("@ss.hasPermi('kms:systemMetadata:edit')")
+//    @Log(title = "系统元数据", businessType = BusinessType.UPDATE)
+//    @PutMapping
+//    public AjaxResult edit(@RequestBody SystemMetadata systemMetadata)
+//    {
+//        return toAjax(systemMetadataService.updateSystemMetadata(systemMetadata));
+//    }
+
     /**
      * 新增系统元数据
+     * 适配三个预警级别字段：warningLevel1Value、warningLevel2Value、warningLevel3Value
      */
     @PreAuthorize("@ss.hasPermi('kms:systemMetadata:add')")
     @Log(title = "系统元数据", businessType = BusinessType.INSERT)
     @PostMapping
     public AjaxResult add(@RequestBody SystemMetadata systemMetadata)
     {
+        // 基础参数校验：确保核心字段不为空
+        if (systemMetadata.getModuleName() == null || systemMetadata.getModuleName().isEmpty()) {
+            return AjaxResult.error("模块名称不能为空");
+        }
+        if (systemMetadata.getConfigKey() == null || systemMetadata.getConfigKey().isEmpty()) {
+            return AjaxResult.error("配置项键名不能为空");
+        }
+        // 校验三个预警级别字段（根据业务需求决定是否必填）
+        if (systemMetadata.getWarningLevel1Value() == null || systemMetadata.getWarningLevel1Value().isEmpty()) {
+            return AjaxResult.error("一级预警阈值不能为空");
+        }
+        if (systemMetadata.getWarningLevel2Value() == null || systemMetadata.getWarningLevel2Value().isEmpty()) {
+            return AjaxResult.error("二级预警阈值不能为空");
+        }
+        if (systemMetadata.getWarningLevel3Value() == null || systemMetadata.getWarningLevel3Value().isEmpty()) {
+            return AjaxResult.error("三级预警阈值不能为空");
+        }
+
+        // 设置更新时间（也可在Service层统一处理）
+        systemMetadata.setUpdateTime(DateUtils.getNowDate());
+
         return toAjax(systemMetadataService.insertSystemMetadata(systemMetadata));
     }
 
     /**
      * 修改系统元数据
+     * 适配三个预警级别字段：warningLevel1Value、warningLevel2Value、warningLevel3Value
      */
     @PreAuthorize("@ss.hasPermi('kms:systemMetadata:edit')")
     @Log(title = "系统元数据", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@RequestBody SystemMetadata systemMetadata)
     {
+        // 校验主键ID
+        if (systemMetadata.getId() == null) {
+            return AjaxResult.error("主键ID不能为空");
+        }
+        // 校验三个预警级别字段（根据业务需求决定是否必填）
+        if (systemMetadata.getWarningLevel1Value() == null || systemMetadata.getWarningLevel1Value().isEmpty()) {
+            return AjaxResult.error("一级预警阈值不能为空");
+        }
+        if (systemMetadata.getWarningLevel2Value() == null || systemMetadata.getWarningLevel2Value().isEmpty()) {
+            return AjaxResult.error("二级预警阈值不能为空");
+        }
+        if (systemMetadata.getWarningLevel3Value() == null || systemMetadata.getWarningLevel3Value().isEmpty()) {
+            return AjaxResult.error("三级预警阈值不能为空");
+        }
+
+        // 更新时间自动填充（也可在Service层统一处理）
+        systemMetadata.setUpdateTime(DateUtils.getNowDate());
+
         return toAjax(systemMetadataService.updateSystemMetadata(systemMetadata));
     }
-
     /**
      * 删除系统元数据
      */
